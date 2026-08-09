@@ -1,9 +1,11 @@
 function AuthField({ label, ...props }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-sm font-semibold text-slate-700">{label}</span>
+      <span className="mb-2 block text-sm font-medium text-ink">{label}</span>
+      {/* index.css already gives inputs a themed focus ring, so the local
+          focus:* rules here only fought it. Left off deliberately. */}
       <input
-        className="w-full rounded-lg border border-slate-200 bg-white px-4 py-3 outline-none transition placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/10"
+        className="w-full rounded-xl border border-line-strong bg-surface px-4 py-3 text-ink outline-none transition placeholder:text-ink-mute hover:border-ink-mute"
         {...props}
       />
     </label>

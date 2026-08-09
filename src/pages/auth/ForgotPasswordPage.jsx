@@ -42,7 +42,7 @@ function ForgotPasswordPage() {
   return (
     <div>
       <h1 className="text-3xl font-bold">Forgot password?</h1>
-      <p className="mt-2 text-slate-500">
+      <p className="mt-2 text-ink-soft">
         Enter your email and we&apos;ll send you a reset link.
       </p>
 
@@ -56,16 +56,16 @@ function ForgotPasswordPage() {
           required
         />
         {message && (
-          <p className="rounded-xl bg-primary-light px-4 py-3 text-sm text-primary-dark">
+          <p className="rounded-xl border border-accent-line bg-accent-soft px-4 py-3 text-sm text-accent-hover">
             {message}
           </p>
         )}
         {error && (
-          <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+          <p className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p>
         )}
         <button
           disabled={submitting || cooldown > 0}
-          className="w-full rounded-xl bg-primary px-5 py-3 font-semibold text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-xl bg-accent-strong px-5 py-3 font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting
             ? 'Sending...'

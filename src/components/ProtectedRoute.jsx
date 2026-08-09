@@ -4,7 +4,6 @@ import { useAuth } from '../context/AuthContext.jsx'
 
 function ProtectedRoute() {
   const { user, loading } = useAuth()
-  const verificationRequired = import.meta.env.VITE_REQUIRE_EMAIL_VERIFICATION === 'true'
 
   if (loading) {
     return (
@@ -14,11 +13,8 @@ function ProtectedRoute() {
     )
   }
 
+  // Signing in is all that is required — there is no email confirmation step.
   if (!user) return <Navigate to="/login" replace />
-
-  if (verificationRequired && !user.isEmailVerified) {
-    return <Navigate to="/check-email" replace />
-  }
 
   return <Outlet />
 }

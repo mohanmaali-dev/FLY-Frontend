@@ -1,5 +1,7 @@
 import { UAParser } from 'ua-parser-js'
 
+import { randomUUID } from './browser.js'
+
 const parser = new UAParser()
 
 const result = parser.getResult()
@@ -36,7 +38,7 @@ export const getDeviceInfo = () => {
   const type = getDeviceType()
 
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     name: getDeviceName(type),
     type,
     browser: result.browser.name || 'Unknown Browser',

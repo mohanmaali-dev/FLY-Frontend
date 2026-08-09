@@ -1,21 +1,98 @@
+/* Self-hosted so it also works over the LAN with no internet — the whole point
+   of the app is a phone connecting to this machine directly. */
+@import "@fontsource-variable/inter/index.css";
 @import "tailwindcss";
 
-@theme {
-  --color-primary: #73976a;
-  --color-primary-dark: #526f4b;
-  --color-primary-light: #e8f0e5;
-  --color-cream: #f8f7f2;
-  --color-ink: #1f2a1d;
+/* All colours, shadows and motion live here. To recolour the app, edit only
+   the BRAND block at the top of that file. */
+@import "./theme.css";
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Packet travelling along the link between the two paired devices. */
+@keyframes flow {
+  from {
+    stroke-dashoffset: 120;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 html {
-  font-family: Inter, system-ui, sans-serif;
+  font-family: 'Inter Variable', Inter, system-ui, -apple-system, sans-serif;
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background: #f8f7f2;
+  /* A single element wider than the viewport otherwise lets the whole page
+     scroll sideways, which reads as content "hidden off to the right". */
+  overflow-x: hidden;
+  background: var(--color-raised);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Tabular figures so counts and timestamps stop jittering as they update. */
+  font-feature-settings: 'cv11', 'ss01', 'tnum';
+  font-optical-sizing: auto;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.018em;
+}
+
+/* Tailwind's preflight styles buttons but leaves `cursor` alone, so every
+   button in the app fell back to the browser default arrow. Anything clickable
+   should say so. In @layer base, so a utility like `cursor-zoom-in` still wins. */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled),
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role='button'][aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -7,12 +7,15 @@ import {
   FiDownload,
   FiExternalLink,
   FiFile,
-  FiFileText,
   FiImage,
   FiLink,
+  FiMaximize2,
   FiMusic,
   FiVideo,
 } from 'react-icons/fi'
+
+import ImageLightbox from './ImageLightbox.jsx'
+import { copyText } from '../utils/browser.js'
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B'
@@ -31,22 +34,20 @@ function getFileIcon(mimeType = '') {
 
 export function SharedItemsList({ items = [] }) {
   const [copiedId, setCopiedId] = useState(null)
+  const [previewItem, setPreviewItem] = useState(null)
 
-  const copyToClipboard = (text, itemId) => {
-    navigator.clipboard.writeText(text)
+  const copyToClipboard = async (text, itemId) => {
+    if (!(await copyText(text))) return
+
     setCopiedId(itemId)
     setTimeout(() => setCopiedId(null), 2000)
   }
 
   if (!items || items.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-xs">
-        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
-          <FiFileText size={18} />
-        </div>
-        <h3 className="mt-3 text-xs font-semibold text-slate-800">No shared activity yet</h3>
-        <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
-          Content sent or received in this session will appear here automatically.
+      <div className="rounded-xl border border-dashed border-line px-6 py-12 text-center">
+        <p className="text-sm text-ink-mute">
+          Anything you send or receive appears here.
         </p>
       </div>
     )
@@ -54,13 +55,6 @@ export function SharedItemsList({ items = [] }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-          Activity Feed ({items.length})
-        </h3>
-      </div>
-
-      <div className="space-y-3">
         {items.map((item, index) => {
           const itemId = item.id || `item-${index}`
           const isYou = item.sender === 'You'
@@ -71,55 +65,38 @@ export function SharedItemsList({ items = [] }) {
           return (
             <div
               key={itemId}
-              className={`rounded-xl border bg-white shadow-2xs transition overflow-hidden ${
-                isYou
-                  ? 'border-indigo-200/70'
-                  : 'border-slate-200'
-              }`}
+              className="animate-rise rounded-xl border border-line bg-surface shadow-[var(--shadow-card)] transition hover:border-line-strong"
             >
-              {/* Header Bar */}
-              <div
-                className={`flex items-center justify-between px-3.5 py-2 text-xs border-b ${
-                  isYou
-                    ? 'bg-indigo-50/60 border-indigo-100 text-indigo-900'
-                    : 'bg-slate-50 border-slate-100 text-slate-700'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-medium">
+              {/* Direction is carried by one small icon and the sender name —
+                  it does not need its own tinted bar. */}
+              <div className="flex items-center justify-between gap-3 px-4 pt-3.5">
+                <div className="flex min-w-0 items-center gap-2">
                   {isYou ? (
-                    <>
-                      <FiArrowUpRight className="text-indigo-600" size={14} />
-                      <span className="font-semibold text-indigo-900">Sent by You</span>
-                    </>
+                    <FiArrowUpRight className="shrink-0 text-ink-mute" size={15} />
                   ) : (
-                    <>
-                      <FiArrowDownLeft className="text-slate-600" size={14} />
-                      <span className="font-semibold text-slate-900">Received from {item.sender}</span>
-                    </>
+                    <FiArrowDownLeft className="shrink-0 text-ok" size={15} />
                   )}
+                  <span className="truncate text-sm font-medium text-ink">
+                    {isYou ? 'You' : item.sender}
+                  </span>
                 </div>
 
-                <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                  <span>
-                    {item.timestamp
-                      ? new Date(item.timestamp).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : 'Just now'}
-                  </span>
-                  <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] uppercase font-bold text-slate-600 border border-slate-200">
-                    {isLink ? 'Link' : isFile ? 'File' : 'Text'}
-                  </span>
-                </div>
+                <span className="shrink-0 text-sm text-ink-mute">
+                  {item.timestamp
+                    ? new Date(item.timestamp).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'Just now'}
+                </span>
               </div>
 
               {/* Item Content Area */}
-              <div className="p-3.5">
+              <div className="px-4 pb-4 pt-3">
                 {/* 1. TEXT */}
                 {isText && (
                   <div>
-                    <p className="whitespace-pre-wrap break-words text-sm text-slate-800 leading-relaxed font-sans">
+                    <p className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-ink">
                       {item.text}
                     </p>
 
@@ -127,12 +104,12 @@ export function SharedItemsList({ items = [] }) {
                       <button
                         type="button"
                         onClick={() => copyToClipboard(item.text, itemId)}
-                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 transition"
+                        className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-soft shadow-[var(--shadow-card)] transition hover:text-ink"
                       >
                         {copiedId === itemId ? (
                           <>
-                            <FiCheck size={13} className="text-emerald-600" />
-                            <span className="text-emerald-600">Copied</span>
+                            <FiCheck size={13} className="text-ok" />
+                            <span className="text-ok">Copied</span>
                           </>
                         ) : (
                           <>
@@ -149,14 +126,16 @@ export function SharedItemsList({ items = [] }) {
                 {isLink && (
                   <div>
                     {item.text && (
-                      <p className="text-xs font-medium text-slate-700 mb-2">{item.text}</p>
+                      <p className="mb-2.5 text-sm text-ink-soft">{item.text}</p>
                     )}
 
-                    <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/70 p-2.5">
+                    <div className="flex items-center justify-between rounded-lg border border-line bg-surface p-2.5">
                       <div className="min-w-0 flex-1 pr-2">
-                        <div className="flex items-center gap-1.5 text-slate-900 font-medium text-xs">
-                          <FiLink size={14} className="shrink-0 text-slate-500" />
-                          <span className="truncate">{item.url}</span>
+                        {/* min-w-0 all the way down: without it the nowrap URL
+                            sets a min-content floor and overflows the card. */}
+                        <div className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink">
+                          <FiLink size={14} className="shrink-0 text-ink-mute" />
+                          <span className="min-w-0 truncate">{item.url}</span>
                         </div>
                       </div>
 
@@ -164,11 +143,11 @@ export function SharedItemsList({ items = [] }) {
                         <button
                           type="button"
                           onClick={() => copyToClipboard(item.url, itemId)}
-                          className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-600 hover:text-slate-900 transition"
-                          title="Copy Link"
+                          className="rounded-md border border-line bg-card p-1.5 text-ink-soft transition hover:text-ink"
+                          title="Copy link"
                         >
                           {copiedId === itemId ? (
-                            <FiCheck size={13} className="text-emerald-600" />
+                            <FiCheck size={13} className="text-ok" />
                           ) : (
                             <FiCopy size={13} />
                           )}
@@ -178,7 +157,7 @@ export function SharedItemsList({ items = [] }) {
                           href={item.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-800 transition"
+                          className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.97] hover:bg-accent-hover"
                         >
                           <span>Open</span>
                           <FiExternalLink size={12} />
@@ -191,17 +170,18 @@ export function SharedItemsList({ items = [] }) {
                 {/* 3. FILE */}
                 {isFile && (
                   <div className="space-y-2.5">
-                    <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/70 p-2.5">
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white border border-slate-200 text-slate-700">
-                          {getFileIcon(item.mimeType)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-semibold text-slate-900">
-                            {item.fileName || 'Shared file'}
-                          </p>
-                          <p className="text-[11px] text-slate-500">{formatBytes(item.fileSize)}</p>
-                        </div>
+                    <div className="flex items-center gap-3 rounded-lg border border-line bg-raised p-2.5">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-accent-line bg-accent-soft text-accent">
+                        {getFileIcon(item.mimeType)}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-ink">
+                          {item.fileName || 'Shared file'}
+                        </p>
+                        <p className="mt-0.5 text-xs tabular-nums text-ink-mute">
+                          {formatBytes(item.fileSize)}
+                        </p>
                       </div>
 
                       <a
@@ -209,23 +189,37 @@ export function SharedItemsList({ items = [] }) {
                         target="_blank"
                         rel="noopener noreferrer"
                         download={item.fileName}
-                        className="flex shrink-0 items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 transition"
+                        aria-label={`Download ${item.fileName || 'file'}`}
+                        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.97] hover:bg-accent-hover"
                       >
-                        <FiDownload size={13} />
-                        <span>Download</span>
+                        <FiDownload size={14} />
+                        <span className="hidden sm:inline">Download</span>
                       </a>
                     </div>
 
-                    {/* Image Preview if file is an image */}
+                    {/* A short thumbnail — a full-height crop of every image
+                        made the feed unreadable. Click opens the real thing. */}
                     {item.mimeType && item.mimeType.startsWith('image/') && (
-                      <div className="overflow-hidden rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewItem(item)}
+                        aria-label={`View ${item.fileName || 'image'} full size`}
+                        className="group relative block w-full cursor-zoom-in overflow-hidden rounded-lg border border-line"
+                      >
                         <img
                           src={item.fileUrl}
                           alt={item.fileName}
-                          className="max-h-60 w-full object-cover"
+                          className="h-32 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
                           loading="lazy"
                         />
-                      </div>
+
+                        <span className="absolute inset-0 flex items-center justify-center bg-ink/0 transition group-hover:bg-ink/35">
+                          <span className="flex items-center gap-1.5 rounded-lg bg-surface/95 px-2.5 py-1.5 text-xs font-medium text-ink opacity-0 shadow-[var(--shadow-card)] transition group-hover:opacity-100">
+                            <FiMaximize2 size={13} />
+                            View full size
+                          </span>
+                        </span>
+                      </button>
                     )}
                   </div>
                 )}
@@ -233,7 +227,8 @@ export function SharedItemsList({ items = [] }) {
             </div>
           )
         })}
-      </div>
+
+      <ImageLightbox item={previewItem} onClose={() => setPreviewItem(null)} />
     </div>
   )
 }

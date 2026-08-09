@@ -4,8 +4,6 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import * as noteService from '../services/note.service.js'
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'
-
 function NotesPage() {
   const { logout } = useAuth()
   const [notes, setNotes] = useState([])
@@ -17,8 +15,7 @@ function NotesPage() {
 
   const loadNotes = async () => {
     try {
-      const result = await noteService.getNotes()
-      setNotes(result.data)
+      setNotes(await noteService.getNotes())
     } catch (requestError) {
       setError(requestError.message)
     } finally {
@@ -40,16 +37,11 @@ function NotesPage() {
     setError('')
     setSubmitting(true)
 
-    const data = new FormData()
-    data.append('title', form.title)
-    data.append('content', form.content)
-    if (form.image) data.append('image', form.image)
-
     try {
       if (editingId) {
-        await noteService.updateNote(editingId, data)
+        await noteService.updateNote(editingId, form)
       } else {
-        await noteService.createNote(data)
+        await noteService.createNote(form)
       }
 
       resetForm()
@@ -62,7 +54,7 @@ function NotesPage() {
   }
 
   const startEditing = (note) => {
-    setEditingId(note._id)
+    setEditingId(note.id)
     setForm({ title: note.title, content: note.content, image: null })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -72,7 +64,7 @@ function NotesPage() {
 
     try {
       await noteService.deleteNote(noteId)
-      setNotes((currentNotes) => currentNotes.filter((note) => note._id !== noteId))
+      setNotes((currentNotes) => currentNotes.filter((note) => note.id !== noteId))
     } catch (requestError) {
       setError(requestError.message)
     }
@@ -84,10 +76,10 @@ function NotesPage() {
         <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
           <div className="flex items-center gap-6">
             <Link to="/" className="text-xl font-bold text-primary-dark">
-              TEST
+              FLY
             </Link>
-            <Link to="/dashboard" className="text-sm font-semibold text-slate-500 hover:text-primary-dark">
-              Dashboard
+            <Link to="/" className="text-sm font-semibold text-slate-500 hover:text-primary-dark">
+              Pairing
             </Link>
           </div>
           <button
@@ -144,12 +136,12 @@ function NotesPage() {
             <div className="space-y-4">
               {notes.map((note) => (
                 <article
-                  key={note._id}
+                  key={note.id}
                   className="flex w-full flex-col gap-5 border border-slate-200 bg-white p-5 sm:flex-row"
                 >
                   {note.image && (
                     <img
-                      src={`${SERVER_URL}${note.image}`}
+                      src={note.image}
                       alt={note.title}
                       className="h-44 w-full object-cover sm:h-32 sm:w-48"
                     />
@@ -159,7 +151,7 @@ function NotesPage() {
                       <div>
                         <h2 className="text-xl font-bold">{note.title}</h2>
                         <p className="mt-1 text-xs text-slate-400">
-                          {new Date(note.createdAt).toLocaleDateString()}
+                          {new Date(note.created_at).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="flex gap-4 text-sm font-semibold">
@@ -170,7 +162,7 @@ function NotesPage() {
                           Edit
                         </button>
                         <button
-                          onClick={() => handleDelete(note._id)}
+                          onClick={() => handleDelete(note.id)}
                           className="text-red-600 hover:underline"
                         >
                           Delete

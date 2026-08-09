@@ -1,3 +1,4 @@
+/* oxlint-disable react/only-export-components */
 import {
   createContext,
   useCallback,
@@ -7,10 +8,11 @@ import {
   useState,
 } from 'react'
 
-import {
-  connectWebSocket,
-  sendDeviceMessage,
-} from '../services/websocket.service.js'
+import { useToast } from '../components/Toast.jsx'
+import { userError } from '../utils/errors.js'
+import { destroyPairingSession } from '../services/pairing.service.js'
+import { joinPairingChannel } from '../services/realtime.service.js'
+import { getStoredDevice } from '../utils/device-session.js'
 
 const DeviceContext = createContext(null)
 
@@ -52,6 +54,13 @@ export const DeviceProvider = ({ children }) => {
 
   const [devices, setDevices] = useState([])
   const [connected, setConnected] = useState(false)
+  const [connectionError, setConnectionError] = useState('')
+
+  // Bumped when the peer ends the session, so the page can replace the code it
+  // is showing — the old one no longer resolves.
+  const [endedSignal, setEndedSignal] = useState(0)
+
+  const { toast } = useToast()
 
   // Load history SYNCHRONOUSLY in the state initializer so it's available
   // on the very first render and is never overwritten by the save effect
@@ -60,55 +69,74 @@ export const DeviceProvider = ({ children }) => {
     () => loadHistory(localStorage.getItem('pairing_session_id') || ''),
   )
 
-  // Keep the socket in a ref so callbacks always see the latest value without
+  // Keep the channel in a ref so callbacks always see the latest value without
   // needing to be declared as dependencies.
-  const socketRef = useRef(null)
+  const channelRef = useRef(null)
 
   // ── Persist history whenever items change ─────────────────────────────────
-  // We skip saving when sharedItems is the empty initial state AND sessionId
-  // is empty (nothing to save). The synchronous load above ensures we don't
-  // overwrite stored data on mount.
   useEffect(() => {
     if (!sessionId) return
     saveHistory(sessionId, sharedItems)
   }, [sharedItems, sessionId])
 
-  // ── WebSocket helpers ─────────────────────────────────────────────────────
+  // ── Realtime helpers ──────────────────────────────────────────────────────
 
-  const handleMessage = useCallback((event) => {
-    try {
-      const data = JSON.parse(event.data)
+  const closeChannel = useCallback(() => {
+    const handle = channelRef.current
+    channelRef.current = null
 
-      if (data.type === 'pairing:devices') {
-        setDevices(data.devices || [])
-        setConnected((data.devices || []).length > 1)
-        return
-      }
-
-      if (data.type === 'device:message' && data.payload) {
-        setSharedItems((prev) => [data.payload, ...prev])
-      }
-    } catch {
-      /* ignore malformed messages */
+    if (handle) {
+      // Fire-and-forget: unsubscribing is async but nothing depends on it.
+      handle.close().catch(() => {})
     }
   }, [])
 
-  const openSocket = useCallback(
+  const openChannel = useCallback(
     (sid) => {
-      // Close any stale socket first
-      if (socketRef.current) {
-        socketRef.current.removeEventListener('message', handleMessage)
-        socketRef.current.close()
-        socketRef.current = null
-      }
+      closeChannel()
 
       if (!sid) return
 
-      const connection = connectWebSocket(sid, 'desktop')
-      connection.addEventListener('message', handleMessage)
-      socketRef.current = connection
+      const device = getStoredDevice()
+
+      const handle = joinPairingChannel({
+        sessionId: sid,
+        device: { ...device, type: device.type || 'desktop' },
+        onDevices: (list) => {
+          setDevices(list)
+          setConnected(list.length > 1)
+        },
+        onMessage: (payload) => {
+          setSharedItems((prev) => [payload, ...prev])
+        },
+        onEnded: (by) => {
+          // The other device disconnected and deleted the files, so the links
+          // we are holding are already dead. Clear rather than show 404s.
+          clearHistory(sid)
+          localStorage.removeItem('pairing_session_id')
+          setSharedItems([])
+          setDevices([])
+          setConnected(false)
+
+          // A finished event, not an ongoing fault — a banner would sit there
+          // describing something that already happened.
+          toast({
+            tone: 'info',
+            title: `${by} ended the session`,
+            description: 'Everything shared was deleted. A new code is ready.',
+          })
+
+          // Our session row is gone server-side, so the code we are holding is
+          // dead. Tell the page to issue a fresh one.
+          setEndedSignal((value) => value + 1)
+        },
+        onError: (message) => setConnectionError(message),
+      })
+
+      setConnectionError('')
+      channelRef.current = handle
     },
-    [handleMessage],
+    [closeChannel, toast],
   )
 
   // Auto-connect on mount if a stored session exists.
@@ -121,17 +149,13 @@ export const DeviceProvider = ({ children }) => {
     let ignored = false
 
     const timer = setTimeout(() => {
-      if (!ignored) openSocket(storedId)
+      if (!ignored) openChannel(storedId)
     }, 0)
 
     return () => {
       ignored = true
       clearTimeout(timer)
-      if (socketRef.current) {
-        socketRef.current.removeEventListener('message', handleMessage)
-        socketRef.current.close()
-        socketRef.current = null
-      }
+      closeChannel()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -140,7 +164,7 @@ export const DeviceProvider = ({ children }) => {
 
   /**
    * Call after creating a brand-new session (e.g. after disconnect) to wire
-   * up a fresh WebSocket and load history for the new session (always empty).
+   * up a fresh channel and load history for the new session (always empty).
    */
   const reconnectSession = useCallback(
     (newSessionId) => {
@@ -148,43 +172,52 @@ export const DeviceProvider = ({ children }) => {
       setConnected(false)
       setSharedItems(loadHistory(newSessionId)) // new session → []
       setSessionId(newSessionId)
-      openSocket(newSessionId)
+      openChannel(newSessionId)
     },
-    [openSocket],
+    [openChannel],
   )
 
   /**
    * Explicitly disconnect the current session.
-   * Clears history from localStorage so the next fresh session starts clean.
+   *
+   * Everything shared in it is destroyed: files are removed from Storage, the
+   * session row is dropped so its id and QR stop working, and the local history
+   * is cleared. Nothing the user sent is left behind.
    */
-  const disconnectSession = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.removeEventListener('message', handleMessage)
-      socketRef.current.close()
-      socketRef.current = null
-    }
-
+  const disconnectSession = useCallback(async () => {
     const currentId = localStorage.getItem('pairing_session_id')
+    const handle = channelRef.current
+
+    // Announce before tearing anything down, while the channel is still open,
+    // so the other device can clear its now-dead file links.
+    if (handle) await handle.announceEnd()
+
+    closeChannel()
+
     clearHistory(currentId)
     localStorage.removeItem('pairing_session_id')
 
     setDevices([])
     setConnected(false)
+    setConnectionError('')
     setSharedItems([])
     setSessionId('')
-  }, [handleMessage])
 
-  const sendMessagePayload = useCallback((payload) => {
-    sendDeviceMessage(socketRef.current, payload)
-    const sentItem = {
-      ...payload,
-      id:
-        payload.id ||
-        Date.now().toString() + Math.random().toString(36).substring(2, 7),
-      sender: 'You',
-      timestamp: payload.timestamp || new Date().toISOString(),
+    await destroyPairingSession(currentId)
+  }, [closeChannel])
+
+  const sendMessagePayload = useCallback(async (payload) => {
+    const handle = channelRef.current
+
+    if (!handle) {
+      throw userError('Not connected. Waiting for the other device.')
     }
-    setSharedItems((prev) => [sentItem, ...prev])
+
+    // realtime.service builds the canonical message (id, timestamp, sender),
+    // so the local copy and the remote copy cannot drift apart.
+    const sent = await handle.send(payload)
+
+    setSharedItems((prev) => [{ ...sent, sender: 'You' }, ...prev])
   }, [])
 
   const sendText = useCallback(
@@ -207,6 +240,8 @@ export const DeviceProvider = ({ children }) => {
       value={{
         devices,
         connected,
+        connectionError,
+        endedSignal,
         sharedItems,
         sessionId,
         sendMessagePayload,
