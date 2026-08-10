@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 
 import { useAuth } from '../context/AuthContext.jsx'
 import * as noteService from '../services/note.service.js'
+import { AppHeader } from '../components/AppHeader.jsx'
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:5000'
 
 function NotesPage() {
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
   const [notes, setNotes] = useState([])
   const [form, setForm] = useState({ title: '', content: '', image: null })
   const [editingId, setEditingId] = useState(null)
@@ -79,86 +79,101 @@ function NotesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-cream text-ink">
-      <header className="border-b border-primary/15 bg-white">
-        <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="text-xl font-bold text-primary-dark">
-              TEST
-            </Link>
-            <Link to="/dashboard" className="text-sm font-semibold text-slate-500 hover:text-primary-dark">
-              Dashboard
-            </Link>
+    <div className="min-h-screen bg-ink-50 text-ink-800">
+      <AppHeader user={user} onLogout={logout} />
+
+      <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-ink-900">My notes</h1>
+          <p className="mt-1 text-sm text-ink-500">Create and manage your notes.</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="surface p-5 sm:p-6">
+          <div className="flex flex-col gap-4">
+            <input
+              value={form.title}
+              onChange={(event) =>
+                setForm({ ...form, title: event.target.value })
+              }
+              placeholder="Note title"
+              className="w-full rounded-md border border-border bg-white px-4 py-2.5 text-[14px] text-ink-800 outline-none placeholder:text-ink-400 focus:border-primary focus:ring-2 focus:ring-primary-ring"
+              required
+            />
+            <textarea
+              value={form.content}
+              onChange={(event) =>
+                setForm({ ...form, content: event.target.value })
+              }
+              placeholder="Write your note..."
+              rows="4"
+              className="w-full resize-y rounded-md border border-border bg-white px-4 py-2.5 text-[14px] text-ink-800 outline-none placeholder:text-ink-400 focus:border-primary focus:ring-2 focus:ring-primary-ring min-h-[110px]"
+            />
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  image: event.target.files[0] || null,
+                })
+              }
+              className="block w-full cursor-pointer text-sm text-ink-600 file:mr-4 file:rounded-md file:border-0 file:bg-primary-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-dark"
+            />
           </div>
-          <button
-            onClick={logout}
-            className="rounded-lg border border-primary/30 px-4 py-2 text-sm font-semibold text-primary-dark hover:bg-primary-light"
-          >
-            Logout
-          </button>
-        </nav>
-      </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        <h1 className="text-3xl font-bold">My notes</h1>
-        <p className="mt-2 text-slate-500">Create notes.</p>
+          {error && (
+            <p className="mt-4 rounded-md bg-primary-50 px-4 py-2.5 text-sm text-primary-dark">
+              {error}
+            </p>
+          )}
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-4 rounded-2xl border border-primary/15 bg-white p-6">
-          <input
-            value={form.title}
-            onChange={(event) => setForm({ ...form, title: event.target.value })}
-            placeholder="Note title"
-            className="w-full rounded-lg border border-slate-200 px-4 py-3 outline-none focus:border-primary"
-            required
-          />
-          <textarea
-            value={form.content}
-            onChange={(event) => setForm({ ...form, content: event.target.value })}
-            placeholder="Write your note..."
-            rows="4"
-            className="w-full resize-none rounded-lg border border-slate-200 px-4 py-3 outline-none focus:border-primary"
-          />
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(event) => setForm({ ...form, image: event.target.files[0] || null })}
-            className="block w-full text-sm text-slate-500 file:mr-4 file:rounded-lg file:border-0 file:bg-primary-light file:px-4 file:py-2 file:font-semibold file:text-primary-dark"
-          />
-
-          {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-
-          <div className="flex gap-3">
-            <button disabled={submitting} className="rounded-lg bg-primary px-5 py-2.5 font-semibold text-white hover:bg-primary-dark disabled:opacity-60">
+          <div className="mt-4 flex gap-3">
+            <button
+              disabled={submitting}
+              className="rounded-md bg-primary px-5 py-2.5 font-semibold text-white transition hover:bg-primary-600 disabled:opacity-60"
+            >
               {submitting ? 'Saving...' : editingId ? 'Update note' : 'Create note'}
             </button>
-            {editingId && <button type="button" onClick={resetForm} className="rounded-lg border border-slate-200 px-5 py-2.5 font-semibold text-slate-600">Cancel</button>}
+            {editingId && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-md border border-border bg-white px-5 py-2.5 font-semibold text-ink-600 transition hover:bg-ink-50"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         </form>
 
         <section className="mt-8">
           {loading ? (
-            <p className="text-slate-500">Loading notes...</p>
+            <p className="text-ink-500">Loading notes...</p>
           ) : notes.length === 0 ? (
-            <p className="text-slate-500">No notes yet.</p>
+            <div className="surface p-6 text-center sm:p-10">
+              <p className="text-ink-500">No notes yet. Create one above.</p>
+            </div>
           ) : (
             <div className="space-y-4">
               {notes.map((note) => (
                 <article
                   key={note._id}
-                  className="flex w-full flex-col gap-5 border border-slate-200 bg-white p-5 sm:flex-row"
+                  className="flex w-full flex-col gap-5 rounded-xl border border-border bg-white p-5 sm:flex-row"
                 >
                   {note.image && (
                     <img
                       src={`${SERVER_URL}${note.image}`}
                       alt={note.title}
-                      className="h-44 w-full object-cover sm:h-32 sm:w-48"
+                      className="h-44 w-full rounded-md object-cover sm:h-32 sm:w-48"
                     />
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <h2 className="text-xl font-bold">{note.title}</h2>
-                        <p className="mt-1 text-xs text-slate-400">
+                        <h2 className="text-xl font-bold text-ink-900">
+                          {note.title}
+                        </h2>
+                        <p className="mt-1 text-xs text-ink-400">
                           {new Date(note.createdAt).toLocaleDateString()}
                         </p>
                       </div>
@@ -171,7 +186,7 @@ function NotesPage() {
                         </button>
                         <button
                           onClick={() => handleDelete(note._id)}
-                          className="text-red-600 hover:underline"
+                          className="text-primary-dark hover:underline"
                         >
                           Delete
                         </button>
@@ -179,7 +194,7 @@ function NotesPage() {
                     </div>
 
                     {note.content && (
-                      <p className="mt-4 whitespace-pre-wrap leading-7 text-slate-600">
+                      <p className="mt-4 whitespace-pre-wrap leading-7 text-ink-600">
                         {note.content}
                       </p>
                     )}

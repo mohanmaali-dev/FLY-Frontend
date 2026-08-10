@@ -7,9 +7,9 @@ import {
   FiDownload,
   FiExternalLink,
   FiFile,
-  FiFileText,
   FiImage,
   FiLink,
+  FiMessageSquare,
   FiMusic,
   FiVideo,
 } from 'react-icons/fi'
@@ -22,6 +22,18 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }
 
+function formatTime(timestamp) {
+  if (!timestamp) return 'Just now'
+  try {
+    return new Date(timestamp).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return 'Just now'
+  }
+}
+
 function getFileIcon(mimeType = '') {
   if (mimeType.startsWith('image/')) return <FiImage size={16} />
   if (mimeType.startsWith('video/')) return <FiVideo size={16} />
@@ -29,110 +41,137 @@ function getFileIcon(mimeType = '') {
   return <FiFile size={16} />
 }
 
+function detectType(item) {
+  const isFile = item.itemType === 'file' || !!item.fileUrl
+  if (isFile) return 'file'
+  const isLink = item.itemType === 'link' || (!!item.url && !item.fileUrl)
+  if (isLink) return 'link'
+  return 'text'
+}
+
+const TYPE_META = {
+  text: { label: 'Text', classes: 'bg-ink-50 text-ink-600 border-border' },
+  link: { label: 'Link', classes: 'bg-primary-50 text-primary-dark border-primary-100' },
+  file: { label: 'File', classes: 'bg-ink-100 text-ink-700 border-border' },
+}
+
 export function SharedItemsList({ items = [] }) {
   const [copiedId, setCopiedId] = useState(null)
 
   const copyToClipboard = (text, itemId) => {
+    if (!text) return
     navigator.clipboard.writeText(text)
     setCopiedId(itemId)
-    setTimeout(() => setCopiedId(null), 2000)
+    setTimeout(() => setCopiedId(null), 1800)
   }
 
   if (!items || items.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center shadow-xs">
-        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
-          <FiFileText size={18} />
+      <div className="surface px-5 py-10 text-center sm:px-8 sm:py-14">
+        <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-md bg-ink-50 text-ink-500 ring-1 ring-inset ring-border">
+          <FiMessageSquare size={18} />
         </div>
-        <h3 className="mt-3 text-xs font-semibold text-slate-800">No shared activity yet</h3>
-        <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
-          Content sent or received in this session will appear here automatically.
+        <h3 className="mt-4 text-sm font-semibold text-ink-800">
+          No shared activity yet
+        </h3>
+        <p className="mx-auto mt-2 max-w-sm text-[13px] leading-6 text-ink-500">
+          Content sent or received in this session appears here. History is saved
+          locally on your device.
         </p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-          Activity Feed ({items.length})
+    <div className="space-y-3 sm:space-y-4">
+      <div className="flex items-center justify-between px-0.5">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+          Activity
         </h3>
+        <span className="badge bg-ink-50 text-ink-600 border border-border tabular-nums">
+          {items.length} {items.length === 1 ? 'item' : 'items'}
+        </span>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-3 sm:space-y-4">
         {items.map((item, index) => {
           const itemId = item.id || `item-${index}`
           const isYou = item.sender === 'You'
-          const isText = item.itemType === 'text' || (!item.itemType && item.text && !item.url && !item.fileUrl)
-          const isLink = item.itemType === 'link' || item.url
-          const isFile = item.itemType === 'file' || item.fileUrl
+          const type = detectType(item)
+          const meta = TYPE_META[type]
 
           return (
-            <div
+            <article
               key={itemId}
-              className={`rounded-xl border bg-white shadow-2xs transition overflow-hidden ${
+              className={`overflow-hidden rounded-[10px] border transition-colors ${
                 isYou
-                  ? 'border-indigo-200/70'
-                  : 'border-slate-200'
+                  ? 'border-primary-100 bg-primary-50/30'
+                  : 'border-border bg-white'
               }`}
             >
-              {/* Header Bar */}
-              <div
-                className={`flex items-center justify-between px-3.5 py-2 text-xs border-b ${
-                  isYou
-                    ? 'bg-indigo-50/60 border-indigo-100 text-indigo-900'
-                    : 'bg-slate-50 border-slate-100 text-slate-700'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-medium">
-                  {isYou ? (
-                    <>
-                      <FiArrowUpRight className="text-indigo-600" size={14} />
-                      <span className="font-semibold text-indigo-900">Sent by You</span>
-                    </>
-                  ) : (
-                    <>
-                      <FiArrowDownLeft className="text-slate-600" size={14} />
-                      <span className="font-semibold text-slate-900">Received from {item.sender}</span>
-                    </>
-                  )}
+              {/* Header */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border-soft px-4 py-2.5 sm:px-5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${
+                      isYou
+                        ? 'bg-primary-50 text-primary-dark'
+                        : 'bg-ink-50 text-ink-500'
+                    }`}
+                  >
+                    {isYou ? (
+                      <FiArrowUpRight size={11} strokeWidth={2.2} />
+                    ) : (
+                      <FiArrowDownLeft size={11} strokeWidth={2.2} />
+                    )}
+                  </span>
+                  <p className="truncate text-[13px] font-medium leading-tight text-ink-700">
+                    {isYou ? (
+                      <span className="text-primary-dark font-semibold">
+                        Sent by you
+                      </span>
+                    ) : (
+                      <>
+                        Received from{' '}
+                        <span className="font-semibold text-ink-800">
+                          {item.sender || 'Unknown device'}
+                        </span>
+                      </>
+                    )}
+                  </p>
                 </div>
 
-                <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                  <span>
-                    {item.timestamp
-                      ? new Date(item.timestamp).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })
-                      : 'Just now'}
+                <div className="ml-auto flex items-center gap-2">
+                  <span
+                    className={`badge border ${meta.classes}`}
+                  >
+                    {meta.label}
                   </span>
-                  <span className="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] uppercase font-bold text-slate-600 border border-slate-200">
-                    {isLink ? 'Link' : isFile ? 'File' : 'Text'}
+                  <span className="text-[11px] tabular-nums text-ink-400">
+                    {formatTime(item.timestamp)}
                   </span>
                 </div>
               </div>
 
-              {/* Item Content Area */}
-              <div className="p-3.5">
-                {/* 1. TEXT */}
-                {isText && (
+              {/* Content */}
+              <div className="px-4 py-4 sm:px-5 sm:py-5">
+                {/* TEXT */}
+                {type === 'text' && (
                   <div>
-                    <p className="whitespace-pre-wrap break-words text-sm text-slate-800 leading-relaxed font-sans">
+                    <p className="whitespace-pre-wrap break-words text-[14px] leading-7 text-ink-800 sm:text-[15px]">
                       {item.text}
                     </p>
 
-                    <div className="mt-3 flex justify-end">
+                    <div className="mt-4 flex justify-end">
                       <button
                         type="button"
                         onClick={() => copyToClipboard(item.text, itemId)}
-                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 transition"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-white px-3 py-1.5 text-[12px] font-medium text-ink-700 transition hover:bg-ink-50 active:scale-[0.99]"
                       >
                         {copiedId === itemId ? (
                           <>
-                            <FiCheck size={13} className="text-emerald-600" />
-                            <span className="text-emerald-600">Copied</span>
+                            <FiCheck size={13} className="text-primary" />
+                            <span className="text-primary-dark">Copied</span>
                           </>
                         ) : (
                           <>
@@ -145,32 +184,55 @@ export function SharedItemsList({ items = [] }) {
                   </div>
                 )}
 
-                {/* 2. LINK */}
-                {isLink && (
-                  <div>
+                {/* LINK */}
+                {type === 'link' && (
+                  <div className="space-y-3">
                     {item.text && (
-                      <p className="text-xs font-medium text-slate-700 mb-2">{item.text}</p>
+                      <p className="text-[13px] font-medium text-ink-600">
+                        {item.text}
+                      </p>
                     )}
 
-                    <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/70 p-2.5">
-                      <div className="min-w-0 flex-1 pr-2">
-                        <div className="flex items-center gap-1.5 text-slate-900 font-medium text-xs">
-                          <FiLink size={14} className="shrink-0 text-slate-500" />
-                          <span className="truncate">{item.url}</span>
+                    <div className="flex flex-col gap-3 rounded-[10px] border border-border-soft bg-ink-50 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-3.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start gap-2.5">
+                          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white text-ink-500 ring-1 ring-border">
+                            <FiLink size={15} />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-[13px] font-semibold text-ink-800 sm:text-sm">
+                              {item.url}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-ink-400">
+                              {(() => {
+                                try {
+                                  return new URL(item.url).hostname
+                                } catch {
+                                  return ''
+                                }
+                              })()}
+                            </p>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="flex shrink-0 items-center gap-1.5">
+                      <div className="flex shrink-0 items-center gap-2 sm:flex-nowrap">
                         <button
                           type="button"
                           onClick={() => copyToClipboard(item.url, itemId)}
-                          className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-600 hover:text-slate-900 transition"
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border bg-white px-3 py-2 text-[12px] font-medium text-ink-700 transition hover:bg-ink-50 sm:flex-none active:scale-[0.99]"
                           title="Copy Link"
                         >
                           {copiedId === itemId ? (
-                            <FiCheck size={13} className="text-emerald-600" />
+                            <>
+                              <FiCheck size={13} className="text-primary" />
+                              <span className="text-primary-dark">Copied</span>
+                            </>
                           ) : (
-                            <FiCopy size={13} />
+                            <>
+                              <FiCopy size={13} />
+                              <span>Copy</span>
+                            </>
                           )}
                         </button>
 
@@ -178,7 +240,7 @@ export function SharedItemsList({ items = [] }) {
                           href={item.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-800 transition"
+                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-md bg-ink-900 px-3.5 py-2 text-[12px] font-medium text-white transition hover:bg-ink-800 sm:flex-none active:scale-[0.99]"
                         >
                           <span>Open</span>
                           <FiExternalLink size={12} />
@@ -188,19 +250,30 @@ export function SharedItemsList({ items = [] }) {
                   </div>
                 )}
 
-                {/* 3. FILE */}
-                {isFile && (
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/70 p-2.5">
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white border border-slate-200 text-slate-700">
+                {/* FILE */}
+                {type === 'file' && (
+                  <div className="space-y-3">
+                    <div className="flex flex-col gap-3 rounded-[10px] border border-border-soft bg-ink-50 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-3.5">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-white text-ink-600 ring-1 ring-border">
                           {getFileIcon(item.mimeType)}
-                        </div>
+                        </span>
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-semibold text-slate-900">
+                          <p className="truncate text-[13px] font-semibold text-ink-800 sm:text-sm">
                             {item.fileName || 'Shared file'}
                           </p>
-                          <p className="text-[11px] text-slate-500">{formatBytes(item.fileSize)}</p>
+                          <p className="mt-0.5 text-[11px] font-medium text-ink-500">
+                            {formatBytes(item.fileSize)}
+                            {item.mimeType ? (
+                              <span className="mx-1 text-ink-300">·</span>
+                            ) : null}
+                            {item.mimeType ? (
+                              <span className="mono uppercase tracking-wide text-[10px]">
+                                {item.mimeType.split('/')[1]?.slice(0, 6) ||
+                                  item.mimeType}
+                              </span>
+                            ) : null}
+                          </p>
                         </div>
                       </div>
 
@@ -209,20 +282,19 @@ export function SharedItemsList({ items = [] }) {
                         target="_blank"
                         rel="noopener noreferrer"
                         download={item.fileName}
-                        className="flex shrink-0 items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 transition"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-md bg-ink-900 px-4 py-2.5 text-[12px] font-medium text-white transition hover:bg-ink-800 active:scale-[0.99] sm:py-2"
                       >
                         <FiDownload size={13} />
                         <span>Download</span>
                       </a>
                     </div>
 
-                    {/* Image Preview if file is an image */}
                     {item.mimeType && item.mimeType.startsWith('image/') && (
-                      <div className="overflow-hidden rounded-lg border border-slate-200">
+                      <div className="overflow-hidden rounded-[10px] border border-border bg-white">
                         <img
                           src={item.fileUrl}
                           alt={item.fileName}
-                          className="max-h-60 w-full object-cover"
+                          className="max-h-80 w-full object-cover"
                           loading="lazy"
                         />
                       </div>
@@ -230,7 +302,7 @@ export function SharedItemsList({ items = [] }) {
                   </div>
                 )}
               </div>
-            </div>
+            </article>
           )
         })}
       </div>

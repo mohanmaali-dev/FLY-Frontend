@@ -18,10 +18,19 @@ export const connectWebSocket = (
   sessionId,
   deviceType,
   deviceOverride = null,
+  backendOrigin,
 ) => {
-  const socket = new WebSocket(
-    getWebSocketUrl(),
-  )
+  const isHttps =
+    typeof backendOrigin === 'string' &&
+    backendOrigin.startsWith('https')
+  const url =
+    backendOrigin && !isHttps
+      ? `ws://${backendOrigin.replace(/^https?:\/\//, '')}`
+      : isHttps
+        ? `wss://${backendOrigin.replace(/^https?:\/\//, '')}`
+        : getWebSocketUrl()
+
+  const socket = new WebSocket(url)
 
   const storedDevice = getStoredDevice()
   // Allow callers to pass a fully custom device (e.g. JoinPairingPage with a

@@ -42,9 +42,9 @@ function ForgotPasswordPage() {
   return (
     <div>
       <h1 className="text-3xl font-bold">Forgot password?</h1>
-      <p className="mt-2 text-slate-500">
-        Enter your email and we&apos;ll send you a reset link.
-      </p>
+       <p className="mt-2 text-ink-500">
+         Enter your email and we&apos;ll send you a reset link.
+       </p>
 
       <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
         <AuthField
@@ -56,16 +56,16 @@ function ForgotPasswordPage() {
           required
         />
         {message && (
-          <p className="rounded-xl bg-primary-light px-4 py-3 text-sm text-primary-dark">
+          <p className="rounded-md bg-primary-50 px-4 py-3 text-sm text-primary-dark">
             {message}
           </p>
         )}
         {error && (
-          <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+          <p className="rounded-md bg-primary-50 px-4 py-3 text-sm text-primary-dark">{error}</p>
         )}
         <button
           disabled={submitting || cooldown > 0}
-          className="w-full rounded-xl bg-primary px-5 py-3 font-semibold text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-md bg-primary px-5 py-3 font-semibold text-white hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting
             ? 'Sending...'

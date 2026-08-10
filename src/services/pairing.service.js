@@ -19,8 +19,6 @@ export const uploadPairingFile = async (file) => {
   const formData = new FormData()
   formData.append('file', file)
 
-  // Do NOT set Content-Type manually — axios auto-sets it with the correct
-  // multipart boundary when FormData is passed.
   const response = await request('POST', '/pairing/upload', formData)
 
   return response.data

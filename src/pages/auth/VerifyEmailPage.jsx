@@ -42,12 +42,12 @@ function VerifyEmailPage() {
 
   return (
     <div className="text-center">
-      <div className={`mx-auto grid size-16 place-items-center rounded-full text-2xl ${success ? 'bg-primary-light text-primary-dark' : 'bg-slate-100 text-slate-500'}`}>
+      <div className={`mx-auto grid size-16 place-items-center rounded-full text-2xl ${success ? 'bg-primary-50 text-primary-dark' : 'bg-ink-100 text-ink-500'}`}>
         {success ? '✓' : '✦'}
       </div>
       <h1 className="mt-6 text-3xl font-bold">Email verification</h1>
-      <p className="mt-3 text-slate-500">{status}</p>
-      <Link className="mt-8 inline-block rounded-xl bg-primary px-6 py-3 font-semibold text-white hover:bg-primary-dark" to="/login">Continue to sign in</Link>
+      <p className="mt-3 text-ink-500">{status}</p>
+      <Link className="mt-8 inline-block rounded-md bg-primary px-6 py-3 font-semibold text-white hover:bg-primary-600" to="/login">Continue to sign in</Link>
     </div>
   )
 }

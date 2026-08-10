@@ -29,7 +29,7 @@ function LoginPage() {
   return (
     <div>
       <h1 className="text-3xl font-bold">Welcome back</h1>
-      <p className="mt-2 text-slate-500">Sign in to continue to your account.</p>
+      <p className="mt-2 text-ink-500">Sign in to continue to your account.</p>
 
       <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
         <AuthField
@@ -55,17 +55,17 @@ function LoginPage() {
           </Link>
         </div>
 
-        {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-md bg-primary-50 px-4 py-3 text-sm text-primary-dark">{error}</p>}
 
         <button
-          className="w-full rounded-xl bg-primary px-5 py-3 font-semibold text-white transition hover:bg-primary-dark disabled:opacity-60"
+          className="w-full rounded-md bg-primary px-5 py-3 font-semibold text-white transition hover:bg-primary-600 disabled:opacity-60"
           disabled={submitting}
         >
           {submitting ? 'Signing in...' : 'Sign in'}
         </button>
       </form>
 
-      <p className="mt-7 text-center text-sm text-slate-500">
+      <p className="mt-7 text-center text-sm text-ink-500">
         Don&apos;t have an account?{' '}
         <Link className="font-semibold text-primary-dark hover:underline" to="/register">
           Create account
