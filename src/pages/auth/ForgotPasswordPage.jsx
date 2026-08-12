@@ -41,31 +41,33 @@ function ForgotPasswordPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold">Forgot password?</h1>
-      <p className="mt-2 text-ink-soft">
+      <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.15em] text-accent-hover">Account recovery</p>
+      <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-ink sm:mt-2 sm:text-4xl">Forgot password?</h1>
+      <p className="mt-3 hidden text-sm leading-relaxed text-ink-soft sm:block">
         Enter your email and we&apos;ll send you a reset link.
       </p>
 
-      <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+      <form className="mt-5 space-y-3.5 sm:mt-8 sm:space-y-5" onSubmit={handleSubmit}>
         <AuthField
           label="Email address"
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           placeholder="you@example.com"
+          autoComplete="email"
           required
         />
         {message && (
-          <p className="rounded-xl border border-accent-line bg-accent-soft px-4 py-3 text-sm text-accent-hover">
+          <p role="status" className="rounded-xl border border-ok-line bg-ok-soft px-4 py-3 text-sm text-ok">
             {message}
           </p>
         )}
         {error && (
-          <p className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p>
+          <p role="alert" className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p>
         )}
         <button
           disabled={submitting || cooldown > 0}
-          className="w-full rounded-xl bg-accent-strong px-5 py-3 font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+          className="w-full rounded-xl bg-accent-strong px-5 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-button)] transition active:scale-[0.99] hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-mute disabled:shadow-none sm:py-3"
         >
           {submitting
             ? 'Sending...'
@@ -76,7 +78,7 @@ function ForgotPasswordPage() {
       </form>
 
       <Link
-        className="mt-7 block text-center text-sm font-semibold text-primary-dark hover:underline"
+        className="mt-5 block text-center text-sm font-semibold text-accent-hover transition hover:text-ink sm:mt-7"
         to="/login"
       >
         Back to sign in

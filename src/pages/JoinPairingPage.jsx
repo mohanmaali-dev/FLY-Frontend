@@ -15,9 +15,8 @@ import AppHeader from '../components/AppHeader.jsx'
 import ConfirmDialog from '../components/ConfirmDialog.jsx'
 import Footer from '../components/Footer.jsx'
 import { LogoMark } from '../components/Logo.jsx'
-import SessionPanel from '../components/SessionPanel.jsx'
-import { ShareControls } from '../components/ShareControls.jsx'
-import { SharedItemsList } from '../components/SharedItemsList.jsx'
+import SharingWorkspace from '../components/SharingWorkspace.jsx'
+import { useToast } from '../components/Toast.jsx'
 
 const formatBytes = (bytes) => {
   if (!bytes) return ''
@@ -107,6 +106,7 @@ function getOrCreateJoinDevice(sessionId) {
 
 const JoinPairingPage = () => {
   const { sessionId } = useParams()
+  const { toast } = useToast()
 
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -115,12 +115,17 @@ const JoinPairingPage = () => {
   const [ended, setEnded] = useState('')
   const [disconnecting, setDisconnecting] = useState(false)
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState(
+    navigator.onLine ? 'connecting' : 'offline',
+  )
+  const [reconnectToken, setReconnectToken] = useState(0)
 
   // Loaded synchronously from the id in the URL so the feed is populated on the
   // very first render and the save effect below cannot clobber it.
   const [receivedMessages, setReceivedMessages] = useState(() => loadHistory(sessionId))
 
   const channelRef = useRef(null)
+  const previousPairedRef = useRef(false)
 
   // Hoisted out of the connect effect so the render can tell our own device
   // apart from the host's when listing who is on the session.
@@ -168,16 +173,43 @@ const JoinPairingPage = () => {
       channelRef.current = joinPairingChannel({
         sessionId: session.sessionId,
         device: joinDevice,
-        onDevices: setDevices,
-        onMessage: (payload) =>
-          setReceivedMessages((current) => [payload, ...current]),
+        onDevices: (list) => {
+          const nowPaired = list.length > 1
+          setDevices(list)
+          if (nowPaired && !previousPairedRef.current) {
+            const peer = list.find((entry) => entry.id !== joinDevice.id)
+            toast({
+              tone: 'success',
+              title: 'Device connected',
+              description: peer?.name || 'Both devices are ready to share.',
+            })
+          }
+          previousPairedRef.current = nowPaired
+        },
+        onMessage: (payload) => {
+          setReceivedMessages((current) => [payload, ...current])
+          toast({
+            tone: 'info',
+            title: 'New transfer received',
+            description: payload.fileName || payload.text || payload.url || 'Open recent transfers to view it.',
+          })
+        },
         onEnded: (by) => {
           // Files are already deleted on the server; holding the links would
           // just show broken downloads.
           clearHistory(session.sessionId)
           setReceivedMessages([])
           setDevices([])
+          previousPairedRef.current = false
           setEnded(`${by} ended the session. Everything shared was deleted.`)
+        },
+        onCleared: () => {
+          clearHistory(session.sessionId)
+          setReceivedMessages([])
+        },
+        onStatus: (status) => {
+          setConnectionStatus(status)
+          if (status === 'connected') setError('')
         },
         onError: (message) => setError(message),
       })
@@ -192,8 +224,21 @@ const JoinPairingPage = () => {
       handle?.close().catch(() => {})
 
       setDevices([])
+      previousPairedRef.current = false
     }
-  }, [session?.sessionId, joinDevice])
+  }, [session?.sessionId, joinDevice, reconnectToken, toast])
+
+  useEffect(() => {
+    const handleOffline = () => setConnectionStatus('offline')
+    const handleOnline = () => setReconnectToken((value) => value + 1)
+
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('online', handleOnline)
+    return () => {
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [])
 
   // ── Send ───────────────────────────────────────────────────────────────────
   // Rejections bubble to ShareControls, which shows them next to the form.
@@ -208,6 +253,14 @@ const JoinPairingPage = () => {
     const sent = await handle.send(payload)
 
     setReceivedMessages((prev) => [{ ...sent, sender: 'You' }, ...prev])
+  }
+
+  const handleClearActivity = async () => {
+    const handle = channelRef.current
+    if (handle) await handle.clearActivity()
+
+    clearHistory(session?.sessionId)
+    setReceivedMessages([])
   }
 
   // ── Disconnect ─────────────────────────────────────────────────────────────
@@ -321,72 +374,51 @@ const JoinPairingPage = () => {
           product rather than a desktop app and a separate mobile page. */}
       <AppHeader>
         <span
-          className={`flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium ${
-            paired
+          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium shadow-[var(--shadow-card)] ${
+            ['offline', 'reconnecting', 'disconnected'].includes(connectionStatus)
+              ? 'border-danger-line bg-danger-soft text-danger'
+              : paired
               ? 'border-ok-line bg-ok-soft text-ok'
               : 'border-warn-line bg-warn-soft text-warn'
           }`}
         >
           <span
             className={`h-1.5 w-1.5 rounded-full ${
-              paired ? 'bg-ok' : 'animate-pulse bg-warn'
+              ['offline', 'reconnecting', 'disconnected'].includes(connectionStatus)
+                ? 'bg-danger'
+                : paired
+                  ? 'bg-ok'
+                  : 'animate-pulse bg-warn'
             }`}
           />
-          {paired ? 'Connected' : 'Waiting'}
+          {['offline', 'reconnecting', 'disconnected'].includes(connectionStatus)
+            ? 'Reconnecting'
+            : paired
+              ? 'Connected'
+              : 'Waiting'}
         </span>
       </AppHeader>
 
-      <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-6 sm:px-6 sm:pb-24 sm:pt-8">
-        <h1 className="text-lg font-semibold tracking-tight sm:text-xl">Sharing</h1>
-
-        {error && (
-          <p className="mt-4 rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">
-            {error}
-          </p>
-        )}
-
-        {/* Same two-column arrangement as the host. The session panel is first
-            in source order so a phone sees connection state and Disconnect
-            straight away — stacked last it sat below the whole activity feed. */}
-        <div className="mt-4 grid items-start gap-5 sm:mt-5 sm:gap-6 lg:grid-cols-12">
-          <div className="order-1 min-w-0 lg:sticky lg:top-6 lg:order-2 lg:col-span-5 xl:col-span-4">
-            <SessionPanel
-              localDevice={joinDevice}
-              remoteDevice={hostDevice}
-              paired={paired}
-              summary={connectionSummary}
-              onDisconnect={() => setConfirmingDisconnect(true)}
-              disconnecting={disconnecting}
-            />
-          </div>
-
-          <div className="order-2 min-w-0 space-y-8 lg:order-1 lg:col-span-7 xl:col-span-8">
-            <div className="rounded-2xl border border-line bg-surface p-4 shadow-[var(--shadow-card)] sm:p-6">
-              <ShareControls
-                sessionId={session?.sessionId}
-                disabled={!paired}
-                disabledReason="Waiting for the other device to come online. Sharing turns on automatically."
-                onSendText={(text) => handleSendPayload({ itemType: 'text', text })}
-                onSendLink={(url, text) => handleSendPayload({ itemType: 'link', url, text })}
-                onSendFile={(fileData) => handleSendPayload({ itemType: 'file', ...fileData })}
-              />
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-baseline justify-between">
-                <h2 className="text-lg font-semibold tracking-tight">Activity</h2>
-                {receivedMessages.length > 0 && (
-                  <span className="text-sm tabular-nums text-ink-mute">
-                    {receivedMessages.length} item
-                    {receivedMessages.length === 1 ? '' : 's'}
-                  </span>
-                )}
-              </div>
-
-              <SharedItemsList items={receivedMessages} />
-            </div>
-          </div>
-        </div>
+      <main className="mx-auto w-full max-w-6xl px-4 pb-20 sm:px-6 sm:pb-24">
+        <SharingWorkspace
+          localDevice={joinDevice}
+          remoteDevice={hostDevice}
+          paired={paired}
+          summary={connectionSummary}
+          items={receivedMessages}
+          sessionId={session?.sessionId}
+          error={error}
+          connectionStatus={connectionStatus}
+          disabled={!paired}
+          disabledReason="Waiting for the other device to come online. Sharing turns on automatically."
+          onSendText={(text) => handleSendPayload({ itemType: 'text', text })}
+          onSendLink={(url, text) => handleSendPayload({ itemType: 'link', url, text })}
+          onSendFile={(fileData) => handleSendPayload({ itemType: 'file', ...fileData })}
+          onClearActivity={handleClearActivity}
+          onRetryConnection={() => setReconnectToken((value) => value + 1)}
+          onDisconnect={() => setConfirmingDisconnect(true)}
+          disconnecting={disconnecting}
+        />
       </main>
 
       {/* Compact: a live session on a phone does not need the brand blurb. */}

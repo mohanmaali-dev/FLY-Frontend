@@ -54,6 +54,9 @@ export const DeviceProvider = ({ children }) => {
 
   const [devices, setDevices] = useState([])
   const [connected, setConnected] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState(
+    sessionId ? 'connecting' : 'idle',
+  )
   const [connectionError, setConnectionError] = useState('')
 
   // Bumped when the peer ends the session, so the page can replace the code it
@@ -72,6 +75,7 @@ export const DeviceProvider = ({ children }) => {
   // Keep the channel in a ref so callbacks always see the latest value without
   // needing to be declared as dependencies.
   const channelRef = useRef(null)
+  const previousConnectedRef = useRef(false)
 
   // ── Persist history whenever items change ─────────────────────────────────
   useEffect(() => {
@@ -97,17 +101,39 @@ export const DeviceProvider = ({ children }) => {
 
       if (!sid) return
 
+      setConnectionStatus(navigator.onLine ? 'connecting' : 'offline')
+
       const device = getStoredDevice()
 
       const handle = joinPairingChannel({
         sessionId: sid,
         device: { ...device, type: device.type || 'desktop' },
         onDevices: (list) => {
+          const nowConnected = list.length > 1
           setDevices(list)
-          setConnected(list.length > 1)
+          setConnected(nowConnected)
+
+          if (nowConnected && !previousConnectedRef.current) {
+            const peer = list.find((entry) => entry.id !== device.id)
+            toast({
+              tone: 'success',
+              title: 'Device connected',
+              description: peer?.name || 'The other device is ready to share.',
+            })
+          }
+          previousConnectedRef.current = nowConnected
         },
         onMessage: (payload) => {
           setSharedItems((prev) => [payload, ...prev])
+          toast({
+            tone: 'info',
+            title: 'New transfer received',
+            description:
+              payload.fileName ||
+              payload.text ||
+              payload.url ||
+              'Open recent transfers to view it.',
+          })
         },
         onEnded: (by) => {
           // The other device disconnected and deleted the files, so the links
@@ -117,6 +143,7 @@ export const DeviceProvider = ({ children }) => {
           setSharedItems([])
           setDevices([])
           setConnected(false)
+          previousConnectedRef.current = false
 
           // A finished event, not an ongoing fault — a banner would sit there
           // describing something that already happened.
@@ -129,6 +156,19 @@ export const DeviceProvider = ({ children }) => {
           // Our session row is gone server-side, so the code we are holding is
           // dead. Tell the page to issue a fresh one.
           setEndedSignal((value) => value + 1)
+        },
+        onCleared: () => {
+          clearHistory(sid)
+          setSharedItems([])
+          toast({
+            tone: 'info',
+            title: 'Transfer activity cleared',
+            description: 'The other device cleared the shared activity.',
+          })
+        },
+        onStatus: (status) => {
+          setConnectionStatus(status)
+          if (status === 'connected') setConnectionError('')
         },
         onError: (message) => setConnectionError(message),
       })
@@ -160,6 +200,20 @@ export const DeviceProvider = ({ children }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    const handleOffline = () => setConnectionStatus('offline')
+    const handleOnline = () => {
+      if (sessionId) openChannel(sessionId)
+    }
+
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('online', handleOnline)
+    return () => {
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('online', handleOnline)
+    }
+  }, [openChannel, sessionId])
+
   // ── Public API ────────────────────────────────────────────────────────────
 
   /**
@@ -170,6 +224,7 @@ export const DeviceProvider = ({ children }) => {
     (newSessionId) => {
       setDevices([])
       setConnected(false)
+      previousConnectedRef.current = false
       setSharedItems(loadHistory(newSessionId)) // new session → []
       setSessionId(newSessionId)
       openChannel(newSessionId)
@@ -199,7 +254,9 @@ export const DeviceProvider = ({ children }) => {
 
     setDevices([])
     setConnected(false)
+    previousConnectedRef.current = false
     setConnectionError('')
+    setConnectionStatus('idle')
     setSharedItems([])
     setSessionId('')
 
@@ -235,11 +292,26 @@ export const DeviceProvider = ({ children }) => {
     [sendMessagePayload],
   )
 
+  const clearSharedItems = useCallback(async () => {
+    const currentId = localStorage.getItem('pairing_session_id')
+    const handle = channelRef.current
+
+    if (handle) await handle.clearActivity()
+
+    clearHistory(currentId)
+    setSharedItems([])
+  }, [])
+
+  const retryConnection = useCallback(() => {
+    if (sessionId) openChannel(sessionId)
+  }, [openChannel, sessionId])
+
   return (
     <DeviceContext.Provider
       value={{
         devices,
         connected,
+        connectionStatus,
         connectionError,
         endedSignal,
         sharedItems,
@@ -248,6 +320,8 @@ export const DeviceProvider = ({ children }) => {
         sendText,
         sendLink,
         sendFile,
+        clearSharedItems,
+        retryConnection,
         disconnectSession,
         reconnectSession,
       }}

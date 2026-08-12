@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   FiArrowDownLeft,
   FiArrowUpRight,
@@ -10,11 +10,13 @@ import {
   FiImage,
   FiLink,
   FiMaximize2,
+  FiMessageCircle,
   FiMusic,
   FiVideo,
 } from 'react-icons/fi'
 
 import ImageLightbox from './ImageLightbox.jsx'
+import { useToast } from './Toast.jsx'
 import { copyText } from '../utils/browser.js'
 
 function formatBytes(bytes) {
@@ -32,29 +34,52 @@ function getFileIcon(mimeType = '') {
   return <FiFile size={16} />
 }
 
+function getFileTypeLabel(mimeType = '') {
+  if (!mimeType) return 'File'
+  if (mimeType.startsWith('image/')) return 'Image'
+  if (mimeType.startsWith('video/')) return 'Video'
+  if (mimeType.startsWith('audio/')) return 'Audio'
+  if (mimeType === 'application/pdf') return 'PDF document'
+  return mimeType.split('/')[1]?.toUpperCase() || 'File'
+}
+
 export function SharedItemsList({ items = [] }) {
   const [copiedId, setCopiedId] = useState(null)
   const [previewItem, setPreviewItem] = useState(null)
+  const listRef = useRef(null)
+  const { toast } = useToast()
+
+  const newestItemId = items?.[0]?.id
+
+  useEffect(() => {
+    if (!newestItemId) return
+    listRef.current?.parentElement?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [newestItemId])
 
   const copyToClipboard = async (text, itemId) => {
     if (!(await copyText(text))) return
 
     setCopiedId(itemId)
     setTimeout(() => setCopiedId(null), 2000)
+    toast({ tone: 'success', title: 'Copied to clipboard', duration: 2500 })
   }
 
   if (!items || items.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-line px-6 py-12 text-center">
-        <p className="text-sm text-ink-mute">
-          Anything you send or receive appears here.
+      <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface/70 px-6 py-12 text-center">
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-accent-line bg-accent-soft text-accent">
+          <FiMessageCircle size={20} aria-hidden="true" />
+        </span>
+        <h3 className="mt-4 text-sm font-semibold text-ink">No transfers yet</h3>
+        <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-ink-mute">
+          Send text, a link or a file from either connected device.
         </p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-3">
+    <div ref={listRef} className="space-y-4">
         {items.map((item, index) => {
           const itemId = item.id || `item-${index}`
           const isYou = item.sender === 'You'
@@ -65,7 +90,7 @@ export function SharedItemsList({ items = [] }) {
           return (
             <div
               key={itemId}
-              className="animate-rise rounded-xl border border-line bg-surface shadow-[var(--shadow-card)] transition hover:border-line-strong"
+              className="animate-rise w-full rounded-xl border border-line bg-surface shadow-[var(--shadow-card)] transition hover:border-line-strong"
             >
               {/* Direction is carried by one small icon and the sender name —
                   it does not need its own tinted bar. */}
@@ -81,14 +106,14 @@ export function SharedItemsList({ items = [] }) {
                   </span>
                 </div>
 
-                <span className="shrink-0 text-sm text-ink-mute">
+                <time dateTime={item.timestamp || undefined} className="shrink-0 text-xs text-ink-mute">
                   {item.timestamp
                     ? new Date(item.timestamp).toLocaleTimeString([], {
                         hour: '2-digit',
                         minute: '2-digit',
                       })
                     : 'Just now'}
-                </span>
+                </time>
               </div>
 
               {/* Item Content Area */}
@@ -104,6 +129,7 @@ export function SharedItemsList({ items = [] }) {
                       <button
                         type="button"
                         onClick={() => copyToClipboard(item.text, itemId)}
+                        aria-label="Copy shared text"
                         className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-soft shadow-[var(--shadow-card)] transition hover:text-ink"
                       >
                         {copiedId === itemId ? (
@@ -129,7 +155,7 @@ export function SharedItemsList({ items = [] }) {
                       <p className="mb-2.5 text-sm text-ink-soft">{item.text}</p>
                     )}
 
-                    <div className="flex items-center justify-between rounded-lg border border-line bg-surface p-2.5">
+                    <div className="flex items-center justify-between rounded-xl border border-line bg-surface/90 p-2.5">
                       <div className="min-w-0 flex-1 pr-2">
                         {/* min-w-0 all the way down: without it the nowrap URL
                             sets a min-content floor and overflows the card. */}
@@ -143,6 +169,7 @@ export function SharedItemsList({ items = [] }) {
                         <button
                           type="button"
                           onClick={() => copyToClipboard(item.url, itemId)}
+                          aria-label="Copy shared link"
                           className="rounded-md border border-line bg-card p-1.5 text-ink-soft transition hover:text-ink"
                           title="Copy link"
                         >
@@ -180,7 +207,7 @@ export function SharedItemsList({ items = [] }) {
                           {item.fileName || 'Shared file'}
                         </p>
                         <p className="mt-0.5 text-xs tabular-nums text-ink-mute">
-                          {formatBytes(item.fileSize)}
+                          {getFileTypeLabel(item.mimeType)} · {formatBytes(item.fileSize)}
                         </p>
                       </div>
 
@@ -209,7 +236,7 @@ export function SharedItemsList({ items = [] }) {
                         <img
                           src={item.fileUrl}
                           alt={item.fileName}
-                          className="h-32 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                          className="h-40 w-full object-cover transition duration-300 group-hover:scale-[1.03] sm:h-48"
                           loading="lazy"
                         />
 
@@ -220,6 +247,28 @@ export function SharedItemsList({ items = [] }) {
                           </span>
                         </span>
                       </button>
+                    )}
+
+                    {item.mimeType && item.mimeType.startsWith('video/') && (
+                      <video
+                        src={item.fileUrl}
+                        controls
+                        preload="metadata"
+                        className="max-h-64 w-full rounded-lg border border-line bg-ink"
+                      >
+                        Your browser does not support video preview.
+                      </video>
+                    )}
+
+                    {item.mimeType && item.mimeType.startsWith('audio/') && (
+                      <audio
+                        src={item.fileUrl}
+                        controls
+                        preload="metadata"
+                        className="w-full"
+                      >
+                        Your browser does not support audio preview.
+                      </audio>
                     )}
                   </div>
                 )}

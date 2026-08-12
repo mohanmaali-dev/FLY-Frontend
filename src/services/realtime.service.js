@@ -4,6 +4,7 @@ import { touchPairingSession } from './pairing.service.js'
 
 const MESSAGE_EVENT = 'device:message'
 const ENDED_EVENT = 'pairing:ended'
+const CLEARED_EVENT = 'pairing:cleared'
 
 const channelName = (sessionId) => `pairing:${sessionId}`
 
@@ -33,7 +34,9 @@ export const joinPairingChannel = ({
   onDevices,
   onMessage,
   onEnded,
+  onCleared,
   onError,
+  onStatus,
 }) => {
   const channel = supabase.channel(channelName(sessionId), {
     config: {
@@ -67,20 +70,29 @@ export const joinPairingChannel = ({
     onEnded?.(payload?.by || 'The other device')
   })
 
+  channel.on('broadcast', { event: CLEARED_EVENT }, () => {
+    onCleared?.()
+  })
+
   channel.subscribe((status, error) => {
     if (status === 'SUBSCRIBED') {
+      onStatus?.('connected')
       channel.track({ device })
       return
     }
 
     if (status === 'CHANNEL_ERROR') {
+      onStatus?.('reconnecting')
       onError?.(toUserMessage(error, 'Connection lost. Trying to reconnect.'))
       return
     }
 
     if (status === 'TIMED_OUT') {
+      onStatus?.('offline')
       onError?.('Connection timed out. Check your network and reload.')
+      return
     }
+
   })
 
   return {
@@ -128,6 +140,18 @@ export const joinPairingChannel = ({
         })
       } catch {
         /* the other side falls back to noticing the presence drop */
+      }
+    },
+
+    clearActivity: async () => {
+      const result = await channel.send({
+        type: 'broadcast',
+        event: CLEARED_EVENT,
+        payload: { by: device.name },
+      })
+
+      if (result !== 'ok') {
+        throw userError('Could not clear activity on the other device.')
       }
     },
 

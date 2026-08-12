@@ -28,24 +28,25 @@ function RegisterPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold">Create your account</h1>
-      <p className="mt-2 text-ink-soft">Get started with your new workspace.</p>
+      <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.15em] text-accent-hover">Get started</p>
+      <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-ink sm:mt-2 sm:text-4xl">Create your account</h1>
+      <p className="mt-3 hidden text-sm leading-relaxed text-ink-soft sm:block">Set up your personal FLY workspace in a few seconds.</p>
 
-      <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
-        <AuthField label="Full name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Your name" required />
-        <AuthField label="Email address" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="you@example.com" required />
-        <AuthField label="Password" type="password" minLength="8" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Minimum 8 characters" required />
+      <form className="mt-5 space-y-3.5 sm:mt-8 sm:space-y-5" onSubmit={handleSubmit}>
+        <AuthField label="Full name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Your name" autoComplete="name" required />
+        <AuthField label="Email address" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="you@example.com" autoComplete="email" required />
+        <AuthField label="Password" hint="8+ characters" type="password" minLength="8" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Create a password" autoComplete="new-password" required />
 
-        {error && <p className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p>}
+        {error && <p role="alert" className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p>}
 
-        <button className="w-full rounded-xl bg-accent-strong px-5 py-3 font-semibold text-white transition hover:bg-accent-hover disabled:opacity-60" disabled={submitting}>
+        <button className="w-full rounded-xl bg-accent-strong px-5 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-button)] transition active:scale-[0.99] hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-mute disabled:shadow-none sm:py-3" disabled={submitting}>
           {submitting ? 'Creating account...' : 'Create account'}
         </button>
       </form>
 
-      <p className="mt-7 text-center text-sm text-ink-soft">
+      <p className="mt-4 text-center text-sm text-ink-soft sm:mt-7">
         Already have an account?{' '}
-        <Link className="font-semibold text-primary-dark hover:underline" to="/login">Sign in</Link>
+        <Link className="font-semibold text-accent-hover transition hover:text-ink" to="/login">Sign in</Link>
       </p>
     </div>
   )

@@ -12,21 +12,28 @@ import { LogoMark } from './Logo.jsx'
  */
 export function AppHeader({ children }) {
   return (
-    // Sticky: the pairing page scrolls well past a viewport, and the logo is
-    // the only route back to a fresh code. Translucent rather than solid so the
-    // content visibly passes under it instead of hitting an opaque band.
-    <header className="sticky top-0 z-40 border-b border-line bg-surface/80 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3.5 sm:px-6 sm:py-4">
+    <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5 sm:pt-4">
+      <div className="mx-auto flex max-w-[1380px] items-center justify-between gap-3 rounded-2xl border border-line-strong bg-surface/92 px-3 py-2.5 shadow-[var(--shadow-raised)] backdrop-blur-xl sm:px-4">
         <Link
           to="/"
           aria-label="FLY home"
-          className="flex items-center gap-2.5 rounded-lg transition hover:opacity-80"
+          className="group flex items-center gap-3 rounded-xl"
         >
-          <LogoMark size="sm" />
-          <span className="text-base font-semibold tracking-tight">FLY</span>
+          <LogoMark
+            size="sm"
+            className="shadow-[var(--shadow-button)] transition duration-200 group-hover:-translate-y-0.5"
+          />
+          <span className="flex flex-col">
+            <span className="text-[1.05rem] font-semibold leading-none tracking-[-0.025em] text-ink">
+              FLY
+            </span>
+            <span className="mt-1.5 hidden text-[0.65rem] font-medium leading-none text-ink-mute sm:block">
+              Share between screens
+            </span>
+          </span>
         </Link>
 
-        {children}
+        {children && <div className="flex items-center gap-2">{children}</div>}
       </div>
     </header>
   )

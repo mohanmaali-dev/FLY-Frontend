@@ -28,5 +28,12 @@ export default defineConfig({
     // Listen on every interface so a phone on the same Wi-Fi can open the
     // pairing link from the QR code. Vite prints the Network URL on start.
     host: true,
+    // This machine's inotify instance limit is shared by every editor and
+    // development server. Polling keeps Vite reliable when that pool is full
+    // instead of crashing with ENOSPC while trying to watch .env.
+    watch: {
+      usePolling: true,
+      interval: 250,
+    },
   },
 })

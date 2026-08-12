@@ -9,10 +9,10 @@ import {
   FiFileText,
   FiKey,
   FiLink,
-  FiLock,
   FiLogOut,
   FiMonitor,
   FiShield,
+  FiShare2,
   FiSmartphone,
   FiTablet,
 } from 'react-icons/fi'
@@ -30,20 +30,17 @@ import {
 import AppHeader from '../components/AppHeader.jsx'
 import ConfirmDialog from '../components/ConfirmDialog.jsx'
 import Footer from '../components/Footer.jsx'
-import SessionPanel from '../components/SessionPanel.jsx'
-import { ShareControls } from '../components/ShareControls.jsx'
-import { SharedItemsList } from '../components/SharedItemsList.jsx'
+import SharingWorkspace from '../components/SharingWorkspace.jsx'
 import { copyText } from '../utils/browser.js'
 import { getStoredDevice } from '../utils/device-session.js'
 
 const CAPABILITIES = [
-  { icon: FiFileText, label: 'Text & notes' },
-  { icon: FiLink, label: 'Links' },
-  { icon: FiFile, label: 'Files up to 50 MB' },
+  { icon: FiFileText, label: 'Text & notes', mobileLabel: 'Text' },
+  { icon: FiLink, label: 'Links', mobileLabel: 'Links' },
+  { icon: FiFile, label: 'Files up to 50 MB', mobileLabel: 'Files' },
 ]
 
-// Same mapping SessionPanel uses, so the device reads as the same thing in the
-// console footer here and in the sidebar once a session is live.
+// Matches the device types used by the live sharing workspace.
 const DEVICE_ICONS = {
   mobile: FiSmartphone,
   tablet: FiTablet,
@@ -82,14 +79,17 @@ function PairingPage() {
   const navigate = useNavigate()
   const {
     connectionError,
+    connectionStatus,
     endedSignal,
     devices,
     sharedItems,
     sendText,
     sendLink,
     sendFile,
+    clearSharedItems,
     disconnectSession,
     reconnectSession,
+    retryConnection,
   } = useDevice()
 
   const [session, setSession] = useState(null)
@@ -316,19 +316,19 @@ function PairingPage() {
       {/* Deliberately quiet: on the unpaired screen nothing should compete
           with the code for attention. */}
       <AppHeader>
-        <nav className="flex items-center gap-1">
+        <nav className="flex items-center gap-1 rounded-xl border border-line bg-raised/75 p-1 shadow-[var(--shadow-card)]">
           {user ? (
             <>
               <Link
                 to="/notes"
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-soft transition hover:bg-raised hover:text-ink"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-surface hover:text-ink hover:shadow-[var(--shadow-card)]"
               >
                 Notes
               </Link>
               <button
                 type="button"
                 onClick={logout}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-ink-soft transition hover:bg-raised hover:text-ink"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-surface hover:text-ink hover:shadow-[var(--shadow-card)]"
                 title={user.name}
               >
                 <FiLogOut size={15} />
@@ -339,13 +339,13 @@ function PairingPage() {
             <>
               <Link
                 to="/login"
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-soft transition hover:bg-raised hover:text-ink"
+                className="rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-surface hover:text-ink hover:shadow-[var(--shadow-card)]"
               >
                 Log in
               </Link>
               <Link
                 to="/register"
-                className="rounded-lg bg-accent-strong px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-accent-hover"
+                className="rounded-lg bg-accent-strong px-4 py-2 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.98] hover:bg-accent-hover"
               >
                 Sign up
               </Link>
@@ -357,7 +357,7 @@ function PairingPage() {
       <main className="mx-auto w-full max-w-6xl px-4 pb-20 sm:px-6 sm:pb-24">
         {onPairView ? (
           /* ── Pairing side ─────────────────────────────────────────────── */
-          <section className="relative pt-12 sm:pt-16 lg:pt-20">
+          <section className="relative pt-6 sm:pt-16 lg:pt-20">
             {/* A faint dot grid, faded out toward the edges. Gives the hero
                 something to sit on without adding a competing colour. */}
             <div
@@ -394,181 +394,156 @@ function PairingPage() {
               </div>
             )}
 
-            {/* One frame, split down the middle, under a shared status bar.
-                The previous two-column grid centred a 340px card inside a
-                ~460px column, so it floated in dead space with nothing tying
-                the halves together. Here a divider does the separating, and
-                there is no gap left over to sit empty.
+            <div className="animate-rise relative left-1/2 w-[calc(100vw-2rem)] max-w-[1380px] -translate-x-1/2 overflow-hidden rounded-[2rem] border border-line-strong bg-surface shadow-[var(--shadow-float)] sm:w-[calc(100vw-3rem)]">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute -left-24 top-16 h-72 w-72 rounded-full bg-accent-soft blur-3xl"
+              />
 
-                min-w-0 on both halves is load-bearing: grid items default to
-                min-width:auto, so the long unbreakable pairing URL set a
-                ~550px min-content floor and stretched the single mobile
-                column past the viewport. */}
-            <div className="animate-rise overflow-hidden rounded-3xl border border-line-strong bg-surface shadow-[var(--shadow-float)]">
-              {/* Connection state gets a permanent home here rather than a pill
-                  floating above the headline, and the session id sits where you
-                  would look for it on any console. */}
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 border-b border-line bg-raised px-5 py-3 sm:px-6">
-                <span className="flex items-center gap-2.5">
-                  {paired ? (
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-ok" />
-                  ) : (
-                    <span className="relative flex h-2 w-2 shrink-0">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warn opacity-75" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-warn" />
-                    </span>
-                  )}
-                  <span className="font-mono text-xs font-medium uppercase tracking-wider text-ink-soft">
-                    {paired
-                      ? `${pairedDeviceName} connected`
-                      : 'Waiting for a device'}
-                  </span>
-                </span>
+              <div className="relative grid lg:min-h-[510px] lg:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]">
+                {/* The product promise gets enough room to read like a real
+                    landing page, while the QR remains the dominant action on
+                    mobile by appearing first there. */}
+                <div className="order-2 flex min-w-0 flex-col p-5 text-center sm:p-9 lg:order-1 lg:p-10 lg:text-left xl:px-12 xl:py-10">
+                  <div className="flex flex-1 flex-col justify-center">
+                    <div className="mx-auto hidden w-fit items-center gap-2 rounded-full border border-accent-line bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent-hover sm:inline-flex lg:mx-0">
+                      <FiShare2 size={13} aria-hidden="true" />
+                      Fast, simple device sharing
+                    </div>
 
-                {session?.code && (
-                  <span className="font-mono text-xs tracking-wider text-ink-mute">
-                    Session {formatCode(session.code)}
-                  </span>
-                )}
-              </div>
-
-              {/* 1.05fr not 1fr: the copy half carries a headline that should
-                  not wrap tighter than the QR half genuinely needs. */}
-              <div className="grid lg:grid-cols-[1.05fr_1fr]">
-                {/* Copy half. Second on a phone: the QR is the reason the page
-                    exists, and burying it under a headline meant scrolling to
-                    reach the one thing you came for. Source order stays
-                    copy-first so it reads correctly to a screen reader on the
-                    desktop layout, where the halves sit side by side. */}
-                <div className="order-2 flex min-w-0 flex-col justify-center gap-6 p-6 text-center sm:p-9 lg:order-1 lg:p-10 lg:text-left">
-                  <div>
-                    {/* One accent word gives the headline a focal point without
-                        scattering colour across the page. The gradient runs
-                        between two brand steps, so it re-themes with the
-                        palette. */}
-                    <h1 className="text-display font-semibold text-balance sm:text-[2.6rem] lg:leading-[1.06]">
-                      Share across your{' '}
+                    <h1 className="mx-auto max-w-2xl text-[2.1rem] font-semibold leading-[1.04] tracking-[-0.045em] text-balance sm:mt-5 sm:text-5xl lg:mx-0 xl:text-[3.35rem]">
+                      Move anything from this screen to the{' '}
                       <span className="bg-gradient-to-br from-brand-500 to-brand-700 bg-clip-text text-transparent">
-                        devices
+                        next.
                       </span>
                     </h1>
 
-                    <p className="mx-auto mt-4 max-w-md text-lg leading-relaxed text-ink-soft lg:mx-0">
-                      Point your phone at the code, or use it on another
-                      computer. Whatever you send appears on the other screen
-                      instantly.
+                    <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-ink-soft sm:mt-4 sm:text-lg sm:leading-7 lg:mx-0">
+                      <span className="sm:hidden">
+                        Connect your devices and share notes, links and files instantly.
+                      </span>
+                      <span className="hidden sm:inline">
+                        Scan once to connect your phone, tablet or computer. Send
+                        notes, links and files instantly—no app, cable or setup.
+                      </span>
                     </p>
+
+                    <div className="mx-auto mt-5 hidden w-fit items-center gap-3 rounded-2xl border border-accent-line bg-accent-soft/70 px-4 py-3 text-left shadow-[var(--shadow-card)] sm:flex lg:mx-0">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-strong text-white shadow-[var(--shadow-button)]">
+                        <FiSmartphone size={18} aria-hidden="true" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-ink">
+                          Scan the QR code to begin
+                        </p>
+                        <p className="mt-0.5 text-xs text-ink-mute">
+                          Your devices connect automatically
+                        </p>
+                      </div>
+                      <FiArrowRight
+                        size={17}
+                        className="hidden shrink-0 text-accent sm:block"
+                        aria-hidden="true"
+                      />
+                    </div>
+
+                    <div className="mx-auto mt-4 w-full max-w-xl overflow-hidden rounded-xl border border-line bg-surface shadow-[var(--shadow-card)] sm:mt-3 sm:rounded-2xl lg:mx-0">
+                      <div className="flex items-center gap-2.5 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-raised text-accent sm:h-9 sm:w-9 sm:rounded-xl">
+                          <FiLink size={16} aria-hidden="true" />
+                        </span>
+                        <div className="min-w-0 flex-1 text-left">
+                          <p className="text-xs font-medium text-ink">
+                            <span className="sm:hidden">Connection link</span>
+                            <span className="hidden sm:inline">Share this connection link</span>
+                          </p>
+                          <p className="mt-0.5 truncate font-mono text-xs text-ink-mute">
+                            {displayUrl}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={copyLink}
+                          aria-label="Copy connection URL"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-line bg-raised text-xs font-medium text-ink-soft transition active:scale-[0.97] hover:border-line-strong hover:text-ink sm:h-auto sm:w-auto sm:px-3 sm:py-2"
+                        >
+                          {copiedLink ? (
+                            <FiCheck size={13} className="text-ok" />
+                          ) : (
+                            <FiCopy size={13} />
+                          )}
+                          <span className="hidden sm:inline">
+                            {copiedLink ? 'Copied' : 'Copy URL'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* One line, no tiles. Three filled icon chips stacked in a
-                      column read as three buttons you could press; laid out
-                      horizontally on the panel's own ground they read as what
-                      they are — a spec line under its label. */}
-                  <div>
-                    <p className="font-mono text-[0.7rem] font-medium uppercase tracking-[0.14em] text-ink-mute">
-                      What you can send
+                  <div className="mt-5 border-t border-line pt-4 sm:mt-6 sm:pt-5">
+                    <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.15em] text-ink-mute">
+                      What you can share
                     </p>
-                    <ul className="mt-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 lg:justify-start">
+                    <ul className="mt-2.5 flex items-center justify-center gap-3 sm:grid sm:grid-cols-3 sm:gap-2">
                       {CAPABILITIES.map((capability) => (
                         <li
                           key={capability.label}
-                          className="flex items-center gap-2 text-sm font-medium text-ink-soft"
+                          className="flex min-w-0 items-center justify-center gap-1.5 text-[0.68rem] font-medium leading-tight text-ink-soft sm:rounded-lg sm:border sm:border-line sm:bg-raised/70 sm:px-2.5 sm:py-2 sm:text-xs sm:shadow-[var(--shadow-card)] lg:justify-start"
                         >
-                          <capability.icon
-                            size={15}
-                            className="shrink-0 text-accent"
-                          />
-                          {capability.label}
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent sm:h-6 sm:w-6">
+                            <capability.icon size={12} aria-hidden="true" />
+                          </span>
+                          <span className="sm:hidden">{capability.mobileLabel}</span>
+                          <span className="hidden sm:inline">{capability.label}</span>
                         </li>
                       ))}
                     </ul>
+                    <p className="mt-3 flex items-center justify-center gap-2 text-[0.68rem] text-ink-mute sm:mt-4 sm:text-xs lg:justify-start">
+                      <FiShield size={13} className="shrink-0" aria-hidden="true" />
+                      <span className="sm:hidden">Clears when you disconnect.</span>
+                      <span className="hidden sm:inline">
+                        No account required. Everything clears when you disconnect.
+                      </span>
+                    </p>
                   </div>
-
-                  <p className="flex items-center justify-center gap-2 text-sm text-ink-mute lg:justify-start">
-                    <FiShield size={14} className="shrink-0" />
-                    No account needed — the session ends when you do.
-                  </p>
                 </div>
 
-                {/* QR half. Recessed grey rather than page white, so the white
-                    QR panel visibly sits on something instead of dissolving
-                    into the surface behind it.
+                {/* A single tinted stage gives the QR a strong, uncluttered
+                    home. It avoids the previous card-inside-card appearance. */}
+                <div className="order-1 flex min-w-0 flex-col border-b border-line bg-[linear-gradient(145deg,var(--color-accent-soft),var(--color-raised)_62%)] p-4 sm:p-7 lg:order-2 lg:border-b-0 lg:border-l lg:p-7 xl:p-8">
+                  <div className="flex flex-1 flex-col items-center justify-center">
+                    <div className="mb-3 text-center sm:mb-5">
+                      <h2 className="text-lg font-semibold tracking-tight text-ink sm:text-xl">
+                        Scan to connect
+                      </h2>
+                      <p className="mt-1.5 text-sm text-ink-soft">
+                        Open your camera and point it at the QR code
+                      </p>
+                    </div>
 
-                    The divider follows the layout: a bottom edge when this
-                    stacks above the copy on a phone, a left edge when the two
-                    sit side by side. */}
-                <div className="order-1 flex min-w-0 flex-col items-center justify-center gap-4 border-b border-line bg-raised p-6 sm:p-8 lg:order-2 lg:border-b-0 lg:border-l">
-                  {loadingSession ? (
-                    // The assembled panel's real height at each width, so
-                    // nothing jumps when the session resolves and swaps it in.
-                    // Below sm the 360px cap does not bind, so the panel is
-                    // narrower and correspondingly shorter.
-                    <div className="h-[27rem] w-full max-w-[360px] animate-pulse rounded-2xl border border-line bg-sunken sm:h-[30rem]" />
-                  ) : session ? (
-                    /* One panel carries all three ways in: scan it, type the
-                       code, or open the link. They are the same session, so
-                       they belong in the same object. overflow-hidden lets the
-                       two rows run edge to edge inside the corner radius.
-
-                       Capped at 360 rather than 400: the QR is square, so every
-                       pixel of panel width it gains is a pixel of console
-                       height too, and the extra height was not wanted. */
-                    <div className="w-full max-w-[360px] overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-raised)]">
-                      <div className="p-4">
-                        {/* Viewfinder brackets: says "scan me" before anyone
-                            reads the caption underneath. */}
-                        <div className="relative rounded-xl bg-white p-3">
-                          <span
-                            aria-hidden="true"
-                            className="pointer-events-none absolute left-1 top-1 h-7 w-7 rounded-tl-xl border-l-2 border-t-2 border-accent"
-                          />
-                          <span
-                            aria-hidden="true"
-                            className="pointer-events-none absolute right-1 top-1 h-7 w-7 rounded-tr-xl border-r-2 border-t-2 border-accent"
-                          />
-                          <span
-                            aria-hidden="true"
-                            className="pointer-events-none absolute bottom-1 left-1 h-7 w-7 rounded-bl-xl border-b-2 border-l-2 border-accent"
-                          />
-                          <span
-                            aria-hidden="true"
-                            className="pointer-events-none absolute bottom-1 right-1 h-7 w-7 rounded-br-xl border-b-2 border-r-2 border-accent"
-                          />
-
-                          {/* The SVG carries a viewBox, so width:100% scales it
-                              crisply — `size` only sets the intrinsic box. At
-                              the 360px panel cap this renders about 304px
-                              against the original card's 224px. */}
-                          <QRCodeSVG
-                            value={pairingUrl}
-                            size={320}
-                            level="M"
-                            className="h-auto w-full"
-                          />
+                    {loadingSession ? (
+                      <div className="h-[17rem] w-full max-w-[240px] animate-pulse rounded-2xl border border-line bg-surface/70 sm:h-[25rem] sm:max-w-[320px] sm:rounded-3xl" />
+                    ) : session ? (
+                      <div className="w-full max-w-[240px] overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-raised)] sm:max-w-[320px]">
+                        <div className="p-3 sm:p-4">
+                          <div className="rounded-xl bg-white p-2">
+                            <QRCodeSVG
+                              value={pairingUrl}
+                              size={320}
+                              level="M"
+                              className="h-auto w-full"
+                            />
+                          </div>
                         </div>
 
-                        <p className="mt-3 flex items-center justify-center gap-2 text-sm text-ink-mute">
-                          <FiSmartphone size={15} />
-                          Point your camera here
-                        </p>
-                      </div>
-
-                      {/* Both rows are a plain flex container with their own
-                          copy control, not a giant button. A button cannot
-                          legally contain another button, and the row-as-target
-                          version gave a screen reader one unlabelled hit area
-                          covering a heading, a value and a state icon. */}
                       {session.code && (
-                        <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-2.5">
-                          <span className="font-mono text-[0.7rem] font-medium uppercase tracking-[0.14em] text-ink-mute">
+                        <div className="flex items-center justify-center gap-2 border-t border-line px-3 py-3 sm:justify-between sm:gap-3 sm:px-5">
+                          <span className="hidden font-mono text-[0.7rem] font-medium uppercase tracking-[0.14em] text-ink-mute sm:inline">
                             Code
                           </span>
 
                           <div className="flex items-center gap-2.5">
-                            {/* The single biggest thing in the panel after the
-                                QR: on a laptop this is what gets read aloud to
-                                whoever is holding the other device. */}
-                            <span className="font-mono text-3xl font-semibold tracking-[0.14em] text-ink">
+                            <span className="whitespace-nowrap font-mono text-2xl font-semibold tracking-[0.12em] text-ink sm:text-3xl sm:tracking-[0.16em]">
                               {formatCode(session.code)}
                             </span>
 
@@ -588,51 +563,19 @@ function PairingPage() {
                         </div>
                       )}
 
-                      {/* URL runs from the left, button pinned to the right
-                          edge where the code row's button also lands, so the
-                          two align. Given the whole run rather than only the
-                          space left over beside the button, it truncates far
-                          less — and `truncate` clips the tail, which is the
-                          pairing code, the one part worth reading. Still set a
-                          step down so a LAN address survives intact. */}
-                      <div className="flex items-center gap-3 border-t border-line px-4 py-2.5">
-                        <span className="shrink-0 font-mono text-[0.7rem] font-medium uppercase tracking-[0.14em] text-ink-mute">
-                          Link
-                        </span>
-
-                        <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink-soft">
-                          {displayUrl}
-                        </span>
-
-                        <button
-                          type="button"
-                          onClick={copyLink}
-                          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-soft shadow-[var(--shadow-card)] transition active:scale-[0.97] hover:border-line-strong hover:text-ink"
-                        >
-                          {copiedLink ? (
-                            <FiCheck size={13} className="text-ok" />
-                          ) : (
-                            <FiCopy size={13} />
-                          )}
-                          {copiedLink ? 'Copied' : 'Copy'}
-                        </button>
                       </div>
-                    </div>
-                  ) : null}
+                    ) : null}
+                  </div>
 
-                  {/* Both copy buttons swap their icon for a tick, which a
-                      screen reader never announces. This says it out loud. */}
                   <span aria-live="polite" className="sr-only">
                     {copiedCode ? 'Pairing code copied' : ''}
                     {copiedLink ? 'Pairing link copied' : ''}
                   </span>
+
                 </div>
               </div>
 
-              {/* Footer strip. What this device is, and what happens to the
-                  data — the same reassurance SessionPanel gives once a session
-                  is live, so the landing and the live screen say one thing. */}
-              <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 border-t border-line bg-raised px-5 py-3 sm:px-6">
+              <div className="relative flex flex-wrap items-center justify-between gap-x-5 gap-y-2 border-t border-line bg-raised px-5 py-3 sm:px-6">
                 <span className="flex min-w-0 items-center gap-2 text-xs text-ink-soft">
                   <DeviceTypeIcon type={currentDevice.type} />
                   <span className="truncate">
@@ -640,9 +583,10 @@ function PairingPage() {
                   </span>
                 </span>
 
-                <span className="flex items-center gap-2 text-xs text-ink-mute">
-                  <FiLock size={13} className="shrink-0" aria-hidden="true" />
-                  Everything clears when you disconnect.
+                <span className="hidden items-center gap-2 text-xs text-ink-mute sm:flex">
+                  {paired
+                    ? `${pairedDeviceName} is connected`
+                    : 'Your session is ready'}
                 </span>
               </div>
             </div>
@@ -663,10 +607,8 @@ function PairingPage() {
               </p>
             )}
 
-            {/* The other half of pairing: this device joining someone else.
-                Without it a second laptop had no way in at all — the QR needs
-                a camera, and nobody is retyping a 36-character link. */}
-            <div className="mx-auto mt-16 max-w-2xl sm:mt-20">
+            {/* A compact alternative for devices without a camera. */}
+            <div className="mx-auto mt-12 max-w-5xl sm:mt-16">
               <div className="flex items-center gap-4">
                 <span className="h-px flex-1 bg-line" />
                 <span className="font-mono text-[0.7rem] font-medium uppercase tracking-[0.14em] text-ink-mute">
@@ -675,151 +617,145 @@ function PairingPage() {
                 <span className="h-px flex-1 bg-line" />
               </div>
 
-              {/* Framed like the console above — header strip, hairline, body —
-                  so the two halves of pairing read as the same product. Still
-                  recessed rather than raised: this is the secondary way in and
-                  should not outweigh the QR it sits beneath. */}
-              <div className="mt-8 overflow-hidden rounded-3xl border border-line bg-raised">
-                <div className="flex items-center gap-3.5 border-b border-line bg-surface px-5 py-4 text-left sm:px-6">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-accent-line bg-accent-soft text-accent">
-                    <FiKey size={18} />
-                  </span>
-                  <div className="min-w-0">
-                    <h2 className="text-base font-semibold tracking-tight">
-                      Have a code from another device?
-                    </h2>
-                    <p className="mt-0.5 text-sm text-ink-soft">
-                      Type it in to join that session.
-                    </p>
+              <div className="mt-6 overflow-hidden rounded-3xl border border-line-strong bg-surface shadow-[var(--shadow-raised)]">
+                <div className="grid lg:grid-cols-[0.78fr_1.22fr]">
+                  <div className="flex items-center gap-4 border-b border-line bg-[linear-gradient(135deg,var(--color-accent-soft),var(--color-raised))] px-5 py-5 text-left sm:px-7 lg:border-b-0 lg:border-r lg:px-8">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent-strong text-white shadow-[var(--shadow-button)]">
+                      <FiKey size={19} aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-mono text-[0.65rem] font-medium uppercase tracking-[0.14em] text-accent-hover">
+                        Join a session
+                      </p>
+                      <h2 className="mt-1 text-base font-semibold tracking-tight text-ink sm:text-lg">
+                        Have a pairing code?
+                      </h2>
+                      <p className="mt-1 text-sm leading-relaxed text-ink-soft">
+                        Enter the six characters shown on the other device.
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <form onSubmit={handleJoin} className="p-5 sm:p-7">
-                  {/* items-stretch so the button matches the taller input
-                      rather than centring against it and leaving two unequal
-                      rounded rectangles side by side. */}
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
-                    <input
-                      value={formatCode(joinCode)}
-                      onChange={(event) => {
-                        setJoinCode(normaliseCode(event.target.value))
-                        setJoinError('')
-                      }}
-                      placeholder="K7M-3QX"
-                      aria-label="Pairing code from the other device"
-                      inputMode="text"
-                      autoCapitalize="characters"
-                      autoComplete="off"
-                      spellCheck="false"
-                      // Set at the same weight as the code the console shows,
-                      // so what you read off one device and what you type into
-                      // the other look like the same object. A recessed fill
-                      // and a stronger border keep it obviously typeable
-                      // against the card's raised grey.
-                      className="w-full min-w-0 flex-1 rounded-2xl border border-line-strong bg-surface px-4 py-4 text-center font-mono text-2xl font-semibold uppercase tracking-[0.2em] text-ink placeholder-ink-mute shadow-[inset_0_2px_5px_rgba(18,20,29,0.06)] transition hover:border-ink-mute focus:bg-surface sm:text-3xl"
-                    />
-
-                    <button
-                      type="submit"
-                      disabled={normaliseCode(joinCode).length !== 6 || joining}
-                      className="flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-accent-strong px-7 py-4 text-base font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.97] hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-mute disabled:shadow-none disabled:active:scale-100"
+                  <form
+                    onSubmit={handleJoin}
+                    className="flex flex-col justify-center p-5 sm:p-7 lg:px-8"
+                  >
+                    <label
+                      htmlFor="join-code"
+                      className="mb-2 font-mono text-[0.65rem] font-medium uppercase tracking-[0.14em] text-ink-mute"
                     >
-                      {joining ? 'Joining...' : 'Join'}
-                      {!joining && <FiArrowRight size={17} />}
-                    </button>
-                  </div>
+                      Pairing code
+                    </label>
+                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-stretch">
+                      <input
+                        id="join-code"
+                        value={formatCode(joinCode)}
+                        onChange={(event) => {
+                          setJoinCode(normaliseCode(event.target.value))
+                          setJoinError('')
+                        }}
+                        placeholder="K7M-3QX"
+                        inputMode="text"
+                        autoCapitalize="characters"
+                        autoComplete="off"
+                        spellCheck="false"
+                        className="w-full min-w-0 flex-1 rounded-xl border border-line-strong bg-raised px-4 py-3 text-center font-mono text-xl font-semibold uppercase tracking-[0.2em] text-ink placeholder-ink-mute shadow-[inset_0_2px_5px_rgba(18,20,29,0.05)] transition hover:border-ink-mute focus:bg-surface sm:text-2xl"
+                      />
 
-                  {joinError && (
-                    <p className="mt-3.5 rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">
-                      {joinError}
-                    </p>
-                  )}
-                </form>
+                      <button
+                        type="submit"
+                        disabled={normaliseCode(joinCode).length !== 6 || joining}
+                        className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-accent-strong px-6 py-3 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.97] hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-mute disabled:shadow-none disabled:active:scale-100"
+                      >
+                        {joining ? 'Joining...' : 'Join device'}
+                        {!joining && <FiArrowRight size={16} />}
+                      </button>
+                    </div>
+
+                    {joinError && (
+                      <p className="mt-3 rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">
+                        {joinError}
+                      </p>
+                    )}
+                  </form>
+                </div>
               </div>
             </div>
 
-            {/* How it works. Given a heading and cards of its own rather than
-                left as a bare list under a rule — unlabelled, three numbered
-                paragraphs read as a continuation of the join form above. */}
-            <div className="mt-20 sm:mt-24">
-              <h2 className="text-center text-xs font-medium uppercase tracking-wider text-ink-mute">
-                How it works
-              </h2>
+            <div className="mt-16 sm:mt-20">
+              <div className="mx-auto max-w-xl text-center">
+                <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.15em] text-accent-hover">
+                  How it works
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink sm:text-[1.75rem]">
+                  Three steps. Nothing to install.
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+                  Connect your devices and start sharing in less than a minute.
+                </p>
+              </div>
 
-              <ol className="mt-6 grid gap-4 sm:grid-cols-3 sm:gap-5">
+              <div className="relative mt-9">
+                <span
+                  aria-hidden="true"
+                  className="absolute left-[16.66%] right-[16.66%] top-[18px] hidden h-px bg-accent-line sm:block"
+                />
+
+              <ol className="relative grid gap-0 sm:grid-cols-3">
                 {STEPS.map((step, index) => (
                   <li
                     key={step.title}
-                    className="rounded-2xl border border-line bg-surface p-5 shadow-[var(--shadow-card)]"
+                    className="relative flex items-start gap-4 pb-7 last:pb-0 sm:block sm:px-6 sm:pb-0 sm:text-center"
                   >
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-strong text-sm font-semibold text-white shadow-[var(--shadow-button)]">
+                    {index < STEPS.length - 1 && (
+                      <span
+                        aria-hidden="true"
+                        className="absolute bottom-0 left-[17px] top-9 w-px bg-accent-line sm:hidden"
+                      />
+                    )}
+
+                    <span className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-accent-line bg-surface text-sm font-semibold text-accent-hover sm:mx-auto">
                       {index + 1}
                     </span>
-                    <h3 className="mt-4 text-sm font-semibold text-ink">
-                      {step.title}
-                    </h3>
-                    <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
-                      {step.body}
-                    </p>
+
+                    <div className="min-w-0 sm:mt-4">
+                      <span className="font-mono text-[0.62rem] font-medium uppercase tracking-[0.14em] text-ink-mute">
+                        Step {String(index + 1).padStart(2, '0')}
+                      </span>
+                      <h3 className="mt-1.5 text-base font-semibold text-ink">
+                        {step.title}
+                      </h3>
+                      <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-ink-soft">
+                        {step.body}
+                      </p>
+                    </div>
                   </li>
                 ))}
               </ol>
+              </div>
             </div>
           </section>
         ) : (
-          /* ── Sharing side ─────────────────────────────────────────────── */
-          <section className="pt-8">
-            <h1 className="text-xl font-semibold tracking-tight">Sharing</h1>
-
-            {connectionError && (
-              <p className="mt-5 rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">
-                {connectionError}
-              </p>
-            )}
-
-            {/* Composer and feed on the left, session state on the right. The
-                panel is first in source order so a phone sees connection state
-                and Disconnect straight away — stacked last it sat below the
-                whole activity feed. */}
-            <div className="mt-4 grid items-start gap-5 sm:mt-5 sm:gap-6 lg:grid-cols-12">
-              <div className="order-1 min-w-0 lg:sticky lg:top-6 lg:order-2 lg:col-span-5 xl:col-span-4">
-                <SessionPanel
-                  localDevice={currentDevice}
-                  remoteDevice={otherDevices[0]}
-                  paired={paired}
-                  summary={connectionSummary}
-                  onShowCode={() => setShowPairView(true)}
-                  onDisconnect={() => setConfirmingDisconnect(true)}
-                  disconnecting={disconnecting}
-                />
-              </div>
-
-              <div className="order-2 min-w-0 space-y-8 lg:order-1 lg:col-span-7 xl:col-span-8">
-                <div className="rounded-2xl border border-line bg-surface p-4 shadow-[var(--shadow-card)] sm:p-6">
-                  <ShareControls
-                    sessionId={session?.sessionId}
-                    onSendText={sendText}
-                    onSendLink={sendLink}
-                    onSendFile={sendFile}
-                  />
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-baseline justify-between">
-                    <h2 className="text-lg font-semibold tracking-tight">Activity</h2>
-                    {sharedItems.length > 0 && (
-                      <span className="text-sm tabular-nums text-ink-mute">
-                        {sharedItems.length} item
-                        {sharedItems.length === 1 ? '' : 's'}
-                      </span>
-                    )}
-                  </div>
-
-                  <SharedItemsList items={sharedItems} />
-                </div>
-              </div>
-            </div>
-          </section>
+          <SharingWorkspace
+            localDevice={currentDevice}
+            remoteDevice={otherDevices[0]}
+            paired={paired}
+            summary={connectionSummary}
+            items={sharedItems}
+            sessionId={session?.sessionId}
+            error={connectionError}
+            connectionStatus={connectionStatus}
+            disabled={!paired}
+            disabledReason="Waiting for the other device to come online. Sharing turns on automatically."
+            onSendText={sendText}
+            onSendLink={sendLink}
+            onSendFile={sendFile}
+            onClearActivity={clearSharedItems}
+            onRetryConnection={retryConnection}
+            onShowCode={() => setShowPairView(true)}
+            onDisconnect={() => setConfirmingDisconnect(true)}
+            disconnecting={disconnecting}
+          />
         )}
       </main>
 

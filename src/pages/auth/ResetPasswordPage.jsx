@@ -73,10 +73,11 @@ function ResetPasswordPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold">Set a new password</h1>
-      <p className="mt-2 text-ink-soft">Choose a password you haven&apos;t used before.</p>
+      <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.15em] text-accent-hover">Account recovery</p>
+      <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-ink sm:mt-2 sm:text-4xl">Set a new password</h1>
+      <p className="mt-3 hidden text-sm leading-relaxed text-ink-soft sm:block">Choose a secure password you haven&apos;t used before.</p>
 
-      <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+      <form className="mt-5 space-y-3.5 sm:mt-8 sm:space-y-5" onSubmit={handleSubmit}>
         <AuthField
           label="New password"
           type="password"
@@ -84,6 +85,8 @@ function ResetPasswordPage() {
           value={form.password}
           onChange={(event) => setForm({ ...form, password: event.target.value })}
           placeholder="Minimum 8 characters"
+          hint="8+ characters"
+          autoComplete="new-password"
           required
         />
         <AuthField
@@ -93,24 +96,25 @@ function ResetPasswordPage() {
           value={form.confirmPassword}
           onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })}
           placeholder="Enter the password again"
+          autoComplete="new-password"
           required
         />
         {!checking && !ready && (
-          <p className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">
+          <p role="alert" className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">
             This reset link is invalid or has expired. Request a new one.
           </p>
         )}
         {message && (
-          <p className="rounded-xl border border-accent-line bg-accent-soft px-4 py-3 text-sm text-accent-hover">
+          <p role="status" className="rounded-xl border border-ok-line bg-ok-soft px-4 py-3 text-sm text-ok">
             {message}
           </p>
         )}
         {error && (
-          <p className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p>
+          <p role="alert" className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-sm text-danger">{error}</p>
         )}
         <button
           disabled={!ready || submitting || Boolean(message)}
-          className="w-full rounded-xl bg-accent-strong px-5 py-3 font-semibold text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-xl bg-accent-strong px-5 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-button)] transition active:scale-[0.99] hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-mute disabled:shadow-none sm:py-3"
         >
           {checking ? 'Checking link...' : submitting ? 'Resetting...' : 'Reset password'}
         </button>
@@ -118,7 +122,7 @@ function ResetPasswordPage() {
 
       {(message || (!checking && !ready)) && (
         <Link
-          className="mt-7 block text-center text-sm font-semibold text-primary-dark hover:underline"
+          className="mt-5 block text-center text-sm font-semibold text-accent-hover transition hover:text-ink sm:mt-7"
           to={message ? '/login' : '/forgot-password'}
         >
           {message ? 'Continue to sign in' : 'Request a new link'}

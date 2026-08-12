@@ -8,6 +8,7 @@ const TONES = {
   info: { icon: FiInfo, className: 'border-line bg-surface text-ink-soft' },
   success: { icon: FiCheck, className: 'border-ok-line bg-ok-soft text-ok' },
   warning: { icon: FiAlertTriangle, className: 'border-warn-line bg-warn-soft text-warn' },
+  error: { icon: FiAlertTriangle, className: 'border-danger-line bg-danger-soft text-danger' },
 }
 
 const EXIT_MS = 200
@@ -32,6 +33,7 @@ function Toast({ toast, onDismiss }) {
 
   return (
     <div
+      role={toast.tone === 'error' ? 'alert' : 'status'}
       className={`pointer-events-auto flex w-full items-start gap-3 rounded-xl border bg-surface p-3.5 shadow-[var(--shadow-raised)] transition-all duration-200 ease-out ${
         shown ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0'
       }`}
@@ -118,8 +120,7 @@ export function ToastProvider({ children }) {
       {children}
 
       <div
-        aria-live="polite"
-        aria-atomic="false"
+        aria-label="Notifications"
         className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex flex-col items-center gap-2 p-4 sm:inset-x-auto sm:right-0 sm:items-end sm:p-6"
       >
         <div className="flex w-full max-w-sm flex-col gap-2">

@@ -1,21 +1,35 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import AuthLayout from './components/AuthLayout.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
-import ForgotPasswordPage from './pages/auth/ForgotPasswordPage.jsx'
-import LoginPage from './pages/auth/LoginPage.jsx'
-import RegisterPage from './pages/auth/RegisterPage.jsx'
-import ResetPasswordPage from './pages/auth/ResetPasswordPage.jsx'
-import PairingPage from './pages/PairingPage.jsx'
-import JoinPairingPage from './pages/JoinPairingPage.jsx'
-import NotesPage from './pages/NotesPage.jsx'
+
+const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage.jsx'))
+const LoginPage = lazy(() => import('./pages/auth/LoginPage.jsx'))
+const RegisterPage = lazy(() => import('./pages/auth/RegisterPage.jsx'))
+const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage.jsx'))
+const PairingPage = lazy(() => import('./pages/PairingPage.jsx'))
+const JoinPairingPage = lazy(() => import('./pages/JoinPairingPage.jsx'))
+const NotesPage = lazy(() => import('./pages/NotesPage.jsx'))
+
+function PageFallback() {
+  return (
+    <div className="grid min-h-screen place-items-center bg-raised text-ink">
+      <div role="status" className="text-center">
+        <span className="mx-auto block h-7 w-7 animate-spin rounded-full border-2 border-accent-line border-t-accent" />
+        <p className="mt-3 text-sm font-medium text-ink-soft">Loading FLY...</p>
+      </div>
+    </div>
+  )
+}
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
           {/* The QR is the landing page — no sign-in, no marketing detour. */}
           <Route path="/" element={<PairingPage />} />
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
@@ -31,7 +45,8 @@ function App() {
             <Route path="/notes" element={<NotesPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       </AuthProvider>
     </BrowserRouter>
   )

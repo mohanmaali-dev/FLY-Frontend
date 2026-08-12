@@ -14,27 +14,27 @@ import { LogoMark } from './Logo.jsx'
  */
 function AuthLayout() {
   return (
-    // bg-raised, not the old bg-cream. That alias resolves to the same white as
-    // the card, so the panel was a white rectangle on a white page held apart
-    // by a hairline. A recessed ground gives it something to sit on.
-    <main className="grid min-h-screen place-items-center bg-raised px-5 py-10">
+    <main className="grid min-h-screen place-items-center bg-raised px-4 py-8 sm:px-5 sm:py-10">
       <div className="mx-auto w-full max-w-md">
         <Link
           to="/"
           aria-label="FLY home"
-          className="mx-auto flex w-fit items-center gap-2.5 rounded-lg transition hover:opacity-80"
+          className="mx-auto flex w-fit items-center gap-2.5 rounded-xl transition hover:opacity-80"
         >
-          <LogoMark size="sm" />
-          <span className="text-base font-semibold tracking-tight">FLY</span>
+          <LogoMark size="sm" className="shadow-[var(--shadow-button)]" />
+          <div>
+            <p className="text-base font-semibold leading-none tracking-tight text-ink">FLY</p>
+            <p className="mt-1.5 text-[0.65rem] text-ink-mute">Share between screens</p>
+          </div>
         </Link>
 
-        <section className="mt-6 rounded-2xl border border-line bg-surface p-6 shadow-[var(--shadow-card)] sm:p-8">
+        <section className="mt-4 rounded-2xl border border-line-strong bg-surface p-4 shadow-[var(--shadow-raised)] sm:mt-6 sm:p-8">
           <Outlet />
         </section>
 
         <Link
           to="/"
-          className="mx-auto mt-6 flex w-fit items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-ink-soft transition hover:text-ink"
+          className="mx-auto mt-5 flex w-fit items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium text-ink-soft transition hover:bg-surface hover:text-ink sm:mt-6"
         >
           <FiArrowLeft size={15} />
           Back to pairing
