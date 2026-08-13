@@ -14,6 +14,9 @@ const ENDED_EVENT = 'pairing:ended'
 const CLEARED_EVENT = 'pairing:cleared'
 const DELIVERED_EVENT = 'device:delivered'
 const REMOVED_EVENT = 'device:removed'
+const DEVICE_REQUEST_EVENT = 'device:request'
+const DEVICE_APPROVED_EVENT = 'device:approved'
+const DEVICE_REJECTED_EVENT = 'device:rejected'
 
 const channelName = (sessionId) => `pairing:${sessionId}`
 
@@ -46,15 +49,23 @@ export const joinPairingChannel = ({
   onCleared,
   onDelivery,
   onRemoved,
+  onJoinRequest,
+  onApprovalPending,
+  onApproved,
+  onRejected,
   onFull,
   onError,
   onStatus,
+  approvedDeviceIds = [],
 }) => {
   let currentDevice = device
   let intentionallyClosed = false
   let keepAliveTimer = null
-  let admitted = true
+  let approvalRequestTimer = null
+  let approvalGranted = device.role !== 'guest' || approvedDeviceIds.includes(device.id)
+  let admitted = approvalGranted
   let admittedIds = new Set([device.id])
+  const approvedIds = new Set([device.id, ...approvedDeviceIds])
   const canSend = createSlidingWindowLimiter()
   const channel = supabase.channel(channelName(sessionId), {
     config: {
@@ -69,18 +80,95 @@ export const joinPairingChannel = ({
       .map((entries) => entries[0]?.device)
       .filter(Boolean)
 
-    const devices = selectSessionDevices(allDevices)
+    const visibleDevices = currentDevice.role === 'host'
+      ? allDevices.filter((entry) => entry.role === 'host' || approvedIds.has(entry.id))
+      : approvalGranted
+        ? allDevices
+        : allDevices.filter((entry) => entry.role === 'host')
+
+    const devices = selectSessionDevices(visibleDevices)
     admittedIds = new Set(devices.map((entry) => entry.id))
-    admitted = admittedIds.has(currentDevice.id)
+    admitted = approvalGranted && admittedIds.has(currentDevice.id)
 
     onDevices?.(devices)
-    if (!admitted) onFull?.(devices)
+    if (approvalGranted && !admitted) onFull?.(devices)
 
     // Keeps `status` accurate and pushes out expiry while devices are attached,
     // so an active pairing is never expired out from under its devices.
     touchPairingSession(sessionId, devices.length).catch(() => {
       /* advisory only — a failure here must not drop the connection */
     })
+  })
+
+  const sendDeviceDecision = async (event, targetId, reason = '') => {
+    const result = await channel.send({
+      type: 'broadcast',
+      event,
+      payload: { targetId, reason, hostId: currentDevice.id },
+    })
+    if (result !== 'ok') throw userError('Could not update the connection request.')
+  }
+
+  const approveDevice = async (targetId) => {
+    approvedIds.add(targetId)
+    await sendDeviceDecision(DEVICE_APPROVED_EVENT, targetId)
+  }
+
+  const rejectDevice = async (targetId, reason = 'The connection request was declined.') => {
+    await sendDeviceDecision(DEVICE_REJECTED_EVENT, targetId, reason)
+  }
+
+  const requestApproval = () => {
+    if (approvalGranted || currentDevice.role !== 'guest') return
+    channel.send({
+      type: 'broadcast',
+      event: DEVICE_REQUEST_EVENT,
+      payload: { device: currentDevice },
+    }).catch(() => {})
+  }
+
+  channel.on('broadcast', { event: DEVICE_REQUEST_EVENT }, ({ payload }) => {
+    const requestedDevice = payload?.device
+    if (
+      currentDevice.role !== 'host' ||
+      requestedDevice?.role !== 'guest' ||
+      !requestedDevice.id ||
+      !requestedDevice.name
+    ) return
+
+    if (approvedIds.has(requestedDevice.id)) {
+      approveDevice(requestedDevice.id).catch(() => {})
+      return
+    }
+
+    const hasApprovedGuest = [...approvedIds].some(
+      (id) => id !== currentDevice.id,
+    )
+    if (hasApprovedGuest) {
+      rejectDevice(requestedDevice.id, 'This session is already connected to another device.').catch(() => {})
+      return
+    }
+
+    onJoinRequest?.(requestedDevice)
+  })
+
+  channel.on('broadcast', { event: DEVICE_APPROVED_EVENT }, ({ payload }) => {
+    if (currentDevice.role !== 'guest' || payload?.targetId !== currentDevice.id) return
+
+    approvalGranted = true
+    approvedIds.add(currentDevice.id)
+    clearInterval(approvalRequestTimer)
+    approvalRequestTimer = null
+    channel.track({ device: currentDevice }).catch(() => {})
+    onApproved?.()
+  })
+
+  channel.on('broadcast', { event: DEVICE_REJECTED_EVENT }, ({ payload }) => {
+    if (currentDevice.role !== 'guest' || payload?.targetId !== currentDevice.id) return
+
+    clearInterval(approvalRequestTimer)
+    approvalRequestTimer = null
+    onRejected?.(payload.reason || 'The connection request was declined.')
   })
 
   channel.on('broadcast', { event: MESSAGE_EVENT }, ({ payload }) => {
@@ -121,7 +209,14 @@ export const joinPairingChannel = ({
   channel.subscribe((status, error) => {
     if (status === 'SUBSCRIBED') {
       onStatus?.('connected')
-      channel.track({ device: currentDevice })
+      if (approvalGranted) {
+        channel.track({ device: currentDevice })
+      } else {
+        onApprovalPending?.()
+        requestApproval()
+        clearInterval(approvalRequestTimer)
+        approvalRequestTimer = setInterval(requestApproval, 3_000)
+      }
       clearInterval(keepAliveTimer)
       keepAliveTimer = setInterval(() => {
         const count = Object.values(channel.presenceState()).length || 1
@@ -242,12 +337,17 @@ export const joinPairingChannel = ({
 
     updateDevice: async (nextDevice) => {
       currentDevice = nextDevice
-      await channel.track({ device: nextDevice })
+      if (approvalGranted) await channel.track({ device: nextDevice })
     },
+
+    approveDevice,
+
+    rejectDevice,
 
     close: async () => {
       intentionallyClosed = true
       clearInterval(keepAliveTimer)
+      clearInterval(approvalRequestTimer)
       try {
         await channel.untrack()
       } catch {

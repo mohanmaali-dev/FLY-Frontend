@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import {
+  FiClipboard,
   FiFile,
   FiFileText,
   FiLink,
@@ -59,6 +60,7 @@ export function ShareControls({
   const [isUploading, setIsUploading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [readingClipboard, setReadingClipboard] = useState(false)
   const [sendError, setSendError] = useState('')
 
   const fileInputRef = useRef(null)
@@ -253,6 +255,50 @@ export function ShareControls({
     addFiles(event.dataTransfer.files)
   }
 
+  const importClipboard = async (target) => {
+    if (disabled || readingClipboard) return
+    if (!navigator.clipboard?.readText) {
+      toast({
+        tone: 'warning',
+        title: 'Clipboard access is unavailable',
+        description: 'Paste into the field manually instead.',
+      })
+      return
+    }
+
+    setReadingClipboard(true)
+    try {
+      const value = await navigator.clipboard.readText()
+      if (!value.trim()) {
+        toast({ tone: 'info', title: 'Clipboard is empty' })
+        return
+      }
+
+      if (target === 'link') {
+        setLinkUrl(value.trim())
+      } else {
+        const clipped = value.slice(0, MAX_TEXT_LENGTH)
+        setTextContent(clipped)
+        if (clipped.length < value.length) {
+          toast({
+            tone: 'warning',
+            title: 'Clipboard text was shortened',
+            description: `Text is limited to ${MAX_TEXT_LENGTH.toLocaleString()} characters.`,
+          })
+        }
+      }
+      setSendError('')
+    } catch {
+      toast({
+        tone: 'warning',
+        title: 'Clipboard permission was not granted',
+        description: 'Allow clipboard access or paste into the field manually.',
+      })
+    } finally {
+      setReadingClipboard(false)
+    }
+  }
+
   return (
     <div className="w-full" onPaste={handlePaste}>
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -313,7 +359,13 @@ export function ShareControls({
           <form id="share-panel-text" role="tabpanel" aria-labelledby="share-tab-text" onSubmit={submitText} className="flex h-full flex-col gap-3 sm:min-h-[300px]">
             <textarea rows={3} value={textContent} onChange={(event) => setTextContent(event.target.value)} placeholder="Paste text, notes, or a code snippet..." disabled={disabled} maxLength={MAX_TEXT_LENGTH} aria-label="Text to share" className={`${FIELD} min-h-[150px] flex-1 resize-y sm:min-h-[230px]`} />
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <span className="text-sm tabular-nums text-ink-mute">{textContent.length.toLocaleString()} / {MAX_TEXT_LENGTH.toLocaleString()}</span>
+              <div className="flex items-center justify-between gap-3 sm:justify-start">
+                <span className="text-sm tabular-nums text-ink-mute">{textContent.length.toLocaleString()} / {MAX_TEXT_LENGTH.toLocaleString()}</span>
+                <button type="button" onClick={() => importClipboard('text')} disabled={disabled || readingClipboard} className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-medium text-ink-soft transition hover:border-line-strong hover:text-ink disabled:opacity-50">
+                  <FiClipboard size={13} aria-hidden="true" />
+                  {readingClipboard ? 'Reading...' : 'Paste clipboard'}
+                </button>
+              </div>
               <button type="submit" disabled={!textContent.trim() || disabled || isSending} className={SUBMIT}>
                 {isSending ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <FiSend size={13} />}
                 {isSending ? 'Sending...' : 'Send text'}
@@ -328,7 +380,13 @@ export function ShareControls({
               <input type="text" inputMode="url" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https://example.com" disabled={disabled} aria-label="Link URL" required className={FIELD} />
               <input type="text" value={linkNote} maxLength={MAX_LINK_NOTE_LENGTH} onChange={(event) => setLinkNote(event.target.value)} placeholder="Title or note (optional)" disabled={disabled} aria-label="Optional link title or note" className={FIELD} />
             </div>
-            <p className="text-xs text-ink-mute">Only http and https web links can be shared.</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-ink-mute">Only http and https web links can be shared.</p>
+              <button type="button" onClick={() => importClipboard('link')} disabled={disabled || readingClipboard} className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-2 text-xs font-medium text-ink-soft transition hover:border-line-strong hover:text-ink disabled:opacity-50">
+                <FiClipboard size={13} aria-hidden="true" />
+                {readingClipboard ? 'Reading...' : 'Paste clipboard'}
+              </button>
+            </div>
             <div className="mt-auto flex justify-stretch pt-3 sm:justify-end">
               <button type="submit" disabled={!linkUrl.trim() || disabled || isSending} className={SUBMIT}>
                 {isSending ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : <FiSend size={13} />}

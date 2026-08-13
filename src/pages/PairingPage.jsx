@@ -64,7 +64,7 @@ const STEPS = [
   },
   {
     title: 'Scan the code',
-    body: 'Your phone opens this session. Both devices pair automatically.',
+    body: 'Your phone opens this session. Approve it here to connect.',
   },
   {
     title: 'Send anything',
@@ -79,6 +79,7 @@ function PairingPage() {
   const {
     connectionError,
     connectionStatus,
+    pendingDevice,
     endedSignal,
     devices,
     localDevice,
@@ -93,6 +94,8 @@ function PairingPage() {
     disconnectSession,
     reconnectSession,
     retryConnection,
+    approvePendingDevice,
+    rejectPendingDevice,
   } = useDevice()
 
   const [session, setSession] = useState(null)
@@ -105,6 +108,7 @@ function PairingPage() {
   const [joinError, setJoinError] = useState('')
   const [disconnecting, setDisconnecting] = useState(false)
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
+  const [approvalBusy, setApprovalBusy] = useState(false)
 
   // Which half of the app is on screen. Jumps to sharing the moment a device
   // connects; "Show code" brings the pairing side back on demand.
@@ -338,6 +342,22 @@ function PairingPage() {
     setTimeout(() => setCopiedCode(false), 2000)
   }
 
+  const handleDeviceDecision = async (approve) => {
+    if (approvalBusy) return
+    setApprovalBusy(true)
+    try {
+      await (approve ? approvePendingDevice() : rejectPendingDevice())
+    } catch (error) {
+      toast({
+        tone: 'warning',
+        title: 'Could not update the request',
+        description: error?.message || 'Check the connection and try again.',
+      })
+    } finally {
+      setApprovalBusy(false)
+    }
+  }
+
   // Copies the link, not the raw UUID: there is no "type a code" flow, so the
   // URL is the only thing a person can actually act on.
   const copyLink = async () => {
@@ -387,6 +407,33 @@ function PairingPage() {
               aria-hidden="true"
               className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(circle_at_1px_1px,var(--color-line)_1px,transparent_0)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,#000_50%,transparent_100%)]"
             />
+
+            {pendingDevice && (
+              <div role="alert" className="animate-rise mb-6 flex flex-col gap-4 rounded-2xl border border-accent-line bg-accent-soft px-4 py-4 shadow-[var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-white">
+                    <FiShield size={18} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-ink">Allow this device to connect?</p>
+                    <p className="mt-1 truncate text-xs text-ink-soft">
+                      {pendingDevice.name}
+                      {[pendingDevice.browser, pendingDevice.os].filter((value) => value && !value.startsWith('Unknown')).length > 0
+                        ? ` · ${[pendingDevice.browser, pendingDevice.os].filter((value) => value && !value.startsWith('Unknown')).join(' · ')}`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+                  <button type="button" disabled={approvalBusy} onClick={() => handleDeviceDecision(false)} className="rounded-lg border border-line-strong bg-surface px-4 py-2.5 text-sm font-medium text-ink-soft transition hover:text-ink disabled:opacity-50">
+                    Decline
+                  </button>
+                  <button type="button" disabled={approvalBusy} onClick={() => handleDeviceDecision(true)} className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-button)] transition hover:bg-accent-hover disabled:opacity-50">
+                    {approvalBusy ? 'Please wait...' : 'Allow device'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Only reachable via "Show code" after pairing — connecting jumps
                 straight to sharing, so this is the way back. */}

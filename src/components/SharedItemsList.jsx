@@ -72,7 +72,21 @@ export function SharedItemsList({ items = [], onRetryItem, onRemoveItem }) {
   const [resolvedUrls, setResolvedUrls] = useState({})
   const [downloadingAll, setDownloadingAll] = useState(false)
   const listRef = useRef(null)
+  const preparedShareRef = useRef(null)
   const { toast } = useToast()
+
+  const supportsFileSharing = useMemo(() => {
+    if (typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') {
+      return false
+    }
+
+    try {
+      const testFile = new File(['fly'], 'fly.txt', { type: 'text/plain' })
+      return navigator.canShare({ files: [testFile] })
+    } catch {
+      return false
+    }
+  }, [])
 
   const newestItemId = items?.[0]?.id
 
@@ -198,6 +212,66 @@ export function SharedItemsList({ items = [], onRetryItem, onRemoveItem }) {
     } catch (error) {
       if (error?.name !== 'AbortError') {
         toast({ tone: 'warning', title: 'Could not open sharing', description: 'Copy the item and try again.' })
+      }
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const shareReceivedFile = async (item) => {
+    if (!supportsFileSharing || busyId) return
+
+    setBusyId(item.id)
+    const alreadyPrepared = preparedShareRef.current?.id === item.id
+
+    try {
+      let file = preparedShareRef.current?.file
+
+      if (!alreadyPrepared) {
+        const fileUrl = await resolveFileUrl(item)
+        const response = await fetch(fileUrl)
+        if (!response.ok) throw new Error('File could not be downloaded')
+
+        const blob = await response.blob()
+        file = new File([blob], item.fileName || 'shared-file', {
+          type: item.mimeType || blob.type || 'application/octet-stream',
+          lastModified: Date.now(),
+        })
+        preparedShareRef.current = { id: item.id, file }
+      }
+
+      if (!navigator.canShare({ files: [file] })) {
+        preparedShareRef.current = null
+        startDownload(await resolveFileUrl(item), item.fileName)
+        toast({
+          tone: 'info',
+          title: 'This file type cannot be shared to apps',
+          description: 'The download has started instead.',
+        })
+        return
+      }
+
+      await navigator.share({
+        title: item.fileName || 'File shared with FLY',
+        files: [file],
+      })
+      preparedShareRef.current = null
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        preparedShareRef.current = null
+      } else if (error?.name === 'NotAllowedError' && !alreadyPrepared) {
+        toast({
+          tone: 'info',
+          title: 'File ready to share',
+          description: 'Tap Share again to open your apps.',
+        })
+      } else {
+        preparedShareRef.current = null
+        toast({
+          tone: 'warning',
+          title: 'Could not share this file',
+          description: 'Download the file and share it from your device instead.',
+        })
       }
     } finally {
       setBusyId(null)
@@ -414,16 +488,36 @@ export function SharedItemsList({ items = [], onRetryItem, onRemoveItem }) {
                         </p>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => downloadItem(item)}
-                        disabled={busyId === itemId}
-                        aria-label={`Download ${item.fileName || 'file'}`}
-                        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.97] hover:bg-accent-hover disabled:opacity-60"
-                      >
-                        <FiDownload size={14} className={busyId === itemId ? 'animate-pulse' : ''} />
-                        <span className="hidden sm:inline">Download</span>
-                      </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {!isYou && supportsFileSharing && (
+                          <button
+                            type="button"
+                            onClick={() => shareReceivedFile(item)}
+                            disabled={busyId === itemId}
+                            aria-label={`Share ${item.fileName || 'file'} to another app`}
+                            title="Share to app"
+                            className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.97] hover:bg-accent-hover disabled:opacity-60"
+                          >
+                            <FiShare2 size={14} className={busyId === itemId ? 'animate-pulse' : ''} />
+                            <span className="hidden sm:inline">Share</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => downloadItem(item)}
+                          disabled={busyId === itemId}
+                          aria-label={`Download ${item.fileName || 'file'}`}
+                          title="Download file"
+                          className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition active:scale-[0.97] disabled:opacity-60 ${
+                            !isYou && supportsFileSharing
+                              ? 'border border-line-strong bg-surface text-ink-soft hover:text-ink'
+                              : 'bg-accent text-white shadow-[var(--shadow-button)] hover:bg-accent-hover'
+                          }`}
+                        >
+                          <FiDownload size={14} className={busyId === itemId ? 'animate-pulse' : ''} />
+                          <span className="hidden sm:inline">Download</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* A short thumbnail — a full-height crop of every image

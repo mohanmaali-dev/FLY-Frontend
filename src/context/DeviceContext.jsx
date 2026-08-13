@@ -23,6 +23,7 @@ const DeviceContext = createContext(null)
 // ─── Storage helpers ───────────────────────────────────────────────────────────
 
 const HISTORY_KEY = (sid) => `pairing_history_${sid}`
+const APPROVED_DEVICE_KEY = (sid) => `pairing_approved_device_${sid}`
 
 function loadHistory(sid) {
   if (!sid) return []
@@ -63,6 +64,7 @@ export const DeviceProvider = ({ children }) => {
     sessionId ? 'connecting' : 'idle',
   )
   const [connectionError, setConnectionError] = useState('')
+  const [pendingDevice, setPendingDevice] = useState(null)
 
   // Bumped when the peer ends the session, so the page can replace the code it
   // is showing — the old one no longer resolves.
@@ -84,6 +86,7 @@ export const DeviceProvider = ({ children }) => {
   const reconnectAttemptsRef = useRef(0)
   const recoveryNeededRef = useRef(true)
   const recoveringTransfersRef = useRef(false)
+  const approvedDeviceRef = useRef('')
 
   // ── Persist history whenever items change ─────────────────────────────────
   useEffect(() => {
@@ -112,10 +115,17 @@ export const DeviceProvider = ({ children }) => {
       setConnectionStatus(navigator.onLine ? 'connecting' : 'offline')
 
       const device = { ...getStoredDevice(), role: 'host' }
+      approvedDeviceRef.current = localStorage.getItem(APPROVED_DEVICE_KEY(sid)) || ''
 
       const handle = joinPairingChannel({
         sessionId: sid,
         device: { ...device, type: device.type || 'desktop' },
+        approvedDeviceIds: approvedDeviceRef.current ? [approvedDeviceRef.current] : [],
+        onJoinRequest: (requestingDevice) => {
+          setPendingDevice((current) => current?.id === requestingDevice.id
+            ? current
+            : requestingDevice)
+        },
         onDevices: (list) => {
           const nowConnected = list.length > 1
           setDevices(list)
@@ -149,8 +159,10 @@ export const DeviceProvider = ({ children }) => {
           // we are holding are already dead. Clear rather than show 404s.
           clearHistory(sid)
           localStorage.removeItem('pairing_session_id')
+          localStorage.removeItem(APPROVED_DEVICE_KEY(sid))
           setSharedItems([])
           setDevices([])
+          setPendingDevice(null)
           setConnected(false)
           previousConnectedRef.current = false
 
@@ -265,6 +277,7 @@ export const DeviceProvider = ({ children }) => {
   const reconnectSession = useCallback(
     (newSessionId) => {
       setDevices([])
+      setPendingDevice(null)
       setConnected(false)
       previousConnectedRef.current = false
       setSharedItems(loadHistory(newSessionId)) // new session → []
@@ -293,8 +306,10 @@ export const DeviceProvider = ({ children }) => {
 
     clearHistory(currentId)
     localStorage.removeItem('pairing_session_id')
+    localStorage.removeItem(APPROVED_DEVICE_KEY(currentId))
 
     setDevices([])
+    setPendingDevice(null)
     setConnected(false)
     previousConnectedRef.current = false
     setConnectionError('')
@@ -304,6 +319,32 @@ export const DeviceProvider = ({ children }) => {
 
     await destroyPairingSession(currentId)
   }, [closeChannel])
+
+  const approvePendingDevice = useCallback(async () => {
+    const requestedDevice = pendingDevice
+    const handle = channelRef.current
+    if (!requestedDevice || !handle || !sessionId) return
+
+    await handle.approveDevice(requestedDevice.id)
+    localStorage.setItem(APPROVED_DEVICE_KEY(sessionId), requestedDevice.id)
+    approvedDeviceRef.current = requestedDevice.id
+    setPendingDevice(null)
+    toast({
+      tone: 'success',
+      title: 'Device approved',
+      description: `${requestedDevice.name} can now join this session.`,
+    })
+  }, [pendingDevice, sessionId, toast])
+
+  const rejectPendingDevice = useCallback(async () => {
+    const requestedDevice = pendingDevice
+    const handle = channelRef.current
+    if (!requestedDevice || !handle) return
+
+    await handle.rejectDevice(requestedDevice.id)
+    setPendingDevice(null)
+    toast({ tone: 'info', title: 'Connection request declined' })
+  }, [pendingDevice, toast])
 
   const sendMessagePayload = useCallback(async (payload) => {
     const handle = channelRef.current
@@ -464,6 +505,7 @@ export const DeviceProvider = ({ children }) => {
         connected,
         connectionStatus,
         connectionError,
+        pendingDevice,
         endedSignal,
         sharedItems,
         sessionId,
@@ -476,6 +518,8 @@ export const DeviceProvider = ({ children }) => {
         removeSharedItem,
         renameLocalDevice,
         retryConnection,
+        approvePendingDevice,
+        rejectPendingDevice,
         disconnectSession,
         reconnectSession,
       }}

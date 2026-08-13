@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { FiAlertTriangle, FiPower } from 'react-icons/fi'
+import { FiAlertTriangle, FiPower, FiShield } from 'react-icons/fi'
 import { LuQrCode } from 'react-icons/lu'
 
 import { randomUUID } from '../utils/browser.js'
@@ -53,6 +53,15 @@ function StatusShell({ children }) {
 // feed survives a refresh — a phone browser reloads far more readily than a
 // desktop one — without the two colliding when both sides are the same browser.
 const HISTORY_KEY = (sid) => `pairing_guest_history_${sid}`
+const APPROVAL_KEY = (sid) => `pairing_guest_approved_${sid}`
+
+function hasStoredApproval(sid, deviceId) {
+  try {
+    return sessionStorage.getItem(APPROVAL_KEY(sid)) === deviceId
+  } catch {
+    return false
+  }
+}
 
 function loadHistory(sid) {
   if (!sid) return []
@@ -126,6 +135,8 @@ const JoinPairingPage = () => {
   const [reconnectToken, setReconnectToken] = useState(0)
   const [deviceRevision, setDeviceRevision] = useState(0)
   const [sessionFull, setSessionFull] = useState(false)
+  const [approvalPending, setApprovalPending] = useState(true)
+  const [approvalRejected, setApprovalRejected] = useState('')
 
   // Loaded synchronously from the id in the URL so the feed is populated on the
   // very first render and the save effect below cannot clobber it.
@@ -150,7 +161,8 @@ const JoinPairingPage = () => {
   )
 
   const otherDevices = devices.filter((device) => device.id !== joinDevice?.id)
-  const paired = otherDevices.length > 0
+  const admitted = devices.some((device) => device.id === joinDevice?.id)
+  const paired = admitted && otherDevices.length > 0
   const hostDevice = otherDevices[0] || null
 
   useEffect(() => {
@@ -188,16 +200,35 @@ const JoinPairingPage = () => {
       channelRef.current = joinPairingChannel({
         sessionId: session.sessionId,
         device: joinDevice,
+        approvedDeviceIds: hasStoredApproval(session.sessionId, joinDevice.id)
+          ? [joinDevice.id]
+          : [],
+        onApprovalPending: () => {
+          setApprovalPending(true)
+          setApprovalRejected('')
+        },
+        onApproved: () => {
+          try {
+            sessionStorage.setItem(APPROVAL_KEY(session.sessionId), joinDevice.id)
+          } catch { /* private mode – approval still works for this page */ }
+          setApprovalPending(false)
+          setApprovalRejected('')
+        },
+        onRejected: (reason) => {
+          setApprovalPending(false)
+          setApprovalRejected(reason)
+        },
         onDevices: (list) => {
-          const admitted = list.some((entry) => entry.id === joinDevice.id)
-          if (!admitted && list.length >= 2) {
+          const deviceAdmitted = list.some((entry) => entry.id === joinDevice.id)
+          if (!deviceAdmitted && list.length >= 2) {
             setSessionFull(true)
             setDevices([])
             return
           }
 
+          if (deviceAdmitted) setApprovalPending(false)
           setSessionFull(false)
-          const nowPaired = list.length > 1
+          const nowPaired = deviceAdmitted && list.length > 1
           setDevices(list)
           if (nowPaired && !previousPairedRef.current) {
             recordEvent('pairing_connected', { side: 'guest' })
@@ -226,6 +257,7 @@ const JoinPairingPage = () => {
           // Files are already deleted on the server; holding the links would
           // just show broken downloads.
           clearHistory(session.sessionId)
+          sessionStorage.removeItem(APPROVAL_KEY(session.sessionId))
           setReceivedMessages([])
           setDevices([])
           previousPairedRef.current = false
@@ -456,6 +488,7 @@ const JoinPairingPage = () => {
       await handle?.close().catch(() => {})
 
       clearHistory(session?.sessionId)
+      sessionStorage.removeItem(APPROVAL_KEY(session?.sessionId))
       setReceivedMessages([])
       setDevices([])
       setEnded('You ended the session. Everything shared was deleted.')
@@ -535,6 +568,40 @@ const JoinPairingPage = () => {
           <LuQrCode size={16} />
           Start another session
         </Link>
+      </StatusShell>
+    )
+  }
+
+  if (approvalRejected) {
+    return (
+      <StatusShell>
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-warn-soft text-warn">
+          <FiShield size={20} />
+        </div>
+        <h1 className="mt-6 text-xl font-semibold tracking-tight">Connection not approved</h1>
+        <p className="mt-3 text-base leading-relaxed text-ink-soft">{approvalRejected}</p>
+        <Link to="/" className={START_BUTTON}>
+          <LuQrCode size={16} />
+          Start another session
+        </Link>
+      </StatusShell>
+    )
+  }
+
+  if (approvalPending && session) {
+    return (
+      <StatusShell>
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-accent-line bg-accent-soft text-accent">
+          <FiShield size={20} />
+        </div>
+        <h1 className="mt-6 text-xl font-semibold tracking-tight">Waiting for approval</h1>
+        <p className="mt-3 text-base leading-relaxed text-ink-soft">
+          Approve {joinDevice?.name || 'this device'} on {hostDevice?.name || 'the device showing the code'} to connect.
+        </p>
+        <div className="mx-auto mt-6 flex w-fit items-center gap-2 rounded-full border border-line bg-raised px-3 py-2 text-xs font-medium text-ink-soft">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+          Request sent
+        </div>
       </StatusShell>
     )
   }

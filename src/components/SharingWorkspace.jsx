@@ -6,6 +6,7 @@ import {
   FiEdit2,
   FiPower,
   FiRefreshCw,
+  FiSun,
   FiSmartphone,
   FiTablet,
   FiTrash2,
@@ -18,6 +19,7 @@ import { SharedItemsList } from './SharedItemsList.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { useToast } from './Toast.jsx'
 import { toUserMessage } from '../utils/errors.js'
+import { useScreenWakeLock } from '../hooks/useScreenWakeLock.js'
 
 const DEVICE_ICONS = {
   mobile: FiSmartphone,
@@ -86,6 +88,7 @@ export function SharingWorkspace({
   const [savingName, setSavingName] = useState(false)
   const [showConnectedWelcome, setShowConnectedWelcome] = useState(false)
   const { toast } = useToast()
+  const wakeLock = useScreenWakeLock()
   const connectionInterrupted = ['offline', 'reconnecting', 'disconnected'].includes(
     connectionStatus,
   )
@@ -142,6 +145,22 @@ export function SharingWorkspace({
       })
     } finally {
       setClearing(false)
+    }
+  }
+
+  const toggleWakeLock = async () => {
+    try {
+      if (wakeLock.enabled) {
+        await wakeLock.disable()
+      } else {
+        await wakeLock.enable()
+      }
+    } catch {
+      toast({
+        tone: 'warning',
+        title: 'Could not keep the screen awake',
+        description: 'Your browser or device blocked this setting.',
+      })
     }
   }
 
@@ -256,6 +275,22 @@ export function SharingWorkspace({
           </div>
 
           <div className="flex items-center gap-2">
+            {wakeLock.supported && (
+              <button
+                type="button"
+                onClick={toggleWakeLock}
+                aria-pressed={wakeLock.enabled}
+                title={wakeLock.enabled ? 'Allow the screen to sleep' : 'Keep this screen awake'}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                  wakeLock.enabled
+                    ? 'border-accent-line bg-accent-soft text-accent-hover'
+                    : 'border-line bg-surface text-ink-soft hover:border-line-strong hover:text-ink'
+                }`}
+              >
+                <FiSun size={14} />
+                <span className="hidden sm:inline">{wakeLock.active ? 'Screen awake' : 'Keep awake'}</span>
+              </button>
+            )}
             {onShowCode && (
               <button
                 type="button"
