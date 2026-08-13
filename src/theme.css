@@ -1,44 +1,22 @@
-/* ============================================================================
-   THEME — the only file you need to touch to recolour the whole app.
-   ============================================================================
+/* Change this ONE value to recolour the complete website. */
+:root {
+  /* --fly-brand: #8b2626; */
 
-   HOW TO CHANGE THE COLOUR
-   ------------------------
-   Edit the six --color-brand-* values in the block below. Nothing else.
-   Every button, link, active tab, focus ring, logo and highlight in the app
-   resolves back to these, so one edit re-themes everything.
-
-   Ready-made alternatives are at the bottom of this file — copy one over the
-   active block to swap instantly.
-
-   The greys, and the green/amber/red status colours, are intentionally NOT
-   derived from the brand: status must stay readable whatever the brand is.
-============================================================================ */
+--fly-brand: #BF4646;
+}
 
 @theme {
-  /* ── BRAND — edit these six ─────────────────────────────────────────── */
-  /* Anchored on #3291b6. The other five are the same hue (197°) held at
-     different lightness, so the ramp reads as one colour rather than five
-     related ones.
+  /* This colour ramp is generated automatically from --fly-brand. */
+  --color-brand-50: color-mix(in srgb, var(--fly-brand) 5%, white);
+  --color-brand-100: color-mix(in srgb, var(--fly-brand) 12%, white);
+  --color-brand-200: color-mix(in srgb, var(--fly-brand) 25%, white);
+  --color-brand-500: color-mix(in srgb, var(--fly-brand) 82%, white);
+  --color-brand-600: var(--fly-brand);
+  --color-brand-700: color-mix(in srgb, var(--fly-brand) 84%, black);
 
-     Note on 600: white text on #3291b6 measures 3.6:1, which clears WCAG AA
-     for large text but not for text below 18.66px. Every filled control in
-     the app is smaller than that, so they resolve to --color-accent-hover
-     (#1f647f, 6.6:1) rather than the base. The base still drives borders,
-     icons, brackets and tints, where the ratio does not apply. */
-  --color-brand-50: #eff8fb;
-  --color-brand-100: #daeef6;
-  --color-brand-200: #b5ddee;
-  --color-brand-500: #43a5cb;
-  --color-brand-600: #3291b6;
-  --color-brand-700: #1f647f;
-
-  /* ── Everything below derives from the brand — leave alone ──────────── */
   --color-accent: var(--color-brand-600);
   --color-accent-hover: var(--color-brand-700);
-  /* For anything that puts white text on a filled brand ground. See the
-     contrast note above the brand block. */
-  --color-accent-strong: var(--color-brand-700);
+  --color-accent-strong: var(--color-brand-600);
   --color-accent-soft: var(--color-brand-50);
   --color-accent-muted: var(--color-brand-100);
   --color-accent-line: var(--color-brand-200);
@@ -57,7 +35,7 @@
   --color-ink-soft: #4d5470;
   --color-ink-mute: #858cab;
 
-  /* Status — deliberately independent of the brand */
+  /* Status colours stay independent so their meaning remains clear. */
   --color-ok: #16a34a;
   --color-ok-soft: #f0fdf4;
   --color-ok-line: #bbf7d0;
@@ -70,8 +48,6 @@
   --color-danger-soft: #fef2f2;
   --color-danger-line: #fecaca;
 
-  /* Elevation — two layers each: a tight contact shadow plus a soft ambient
-     one. A single blurred shadow always reads as a drop-shadow filter. */
   --shadow-card: 0 1px 2px rgba(18, 20, 29, 0.04), 0 1px 3px rgba(18, 20, 29, 0.03);
   --shadow-raised: 0 1px 2px rgba(18, 20, 29, 0.05), 0 8px 24px -8px rgba(18, 20, 29, 0.12);
   --shadow-float: 0 2px 4px rgba(18, 20, 29, 0.05), 0 20px 48px -16px rgba(18, 20, 29, 0.16);
@@ -83,35 +59,4 @@
 
   --animate-rise: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-flow: flow 2.4s linear infinite;
-
 }
-
-/* ============================================================================
-   ALTERNATIVE PALETTES — paste one over the BRAND block above.
-============================================================================
-
-   VIOLET
-   --color-brand-50:#faf5ff; --color-brand-100:#f3e8ff; --color-brand-200:#e9d5ff;
-   --color-brand-500:#a855f7; --color-brand-600:#9333ea; --color-brand-700:#7e22ce;
-
-   OCEAN BLUE
-   --color-brand-50:#eff6ff; --color-brand-100:#dbeafe; --color-brand-200:#bfdbfe;
-   --color-brand-500:#3b82f6; --color-brand-600:#2563eb; --color-brand-700:#1d4ed8;
-
-   TEAL
-   --color-brand-50:#f0fdfa; --color-brand-100:#ccfbf1; --color-brand-200:#99f6e4;
-   --color-brand-500:#14b8a6; --color-brand-600:#0d9488; --color-brand-700:#0f766e;
-
-   AMBER
-   --color-brand-50:#fffbeb; --color-brand-100:#fef3c7; --color-brand-200:#fde68a;
-   --color-brand-500:#f59e0b; --color-brand-600:#d97706; --color-brand-700:#b45309;
-
-   ROSE
-   --color-brand-50:#fff1f2; --color-brand-100:#ffe4e6; --color-brand-200:#fecdd3;
-   --color-brand-500:#f43f5e; --color-brand-600:#e11d48; --color-brand-700:#be123c;
-
-   MONOCHROME (the previous look)
-   --color-brand-50:#fafafa; --color-brand-100:#f4f4f5; --color-brand-200:#e4e4e7;
-   --color-brand-500:#3f3f46; --color-brand-600:#18181b; --color-brand-700:#2f2f35;
-
-============================================================================ */

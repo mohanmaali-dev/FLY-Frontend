@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <defs>
     <linearGradient id="fly-brand" x1="5" y1="3" x2="27" y2="29" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#43a5cb"/>
-      <stop offset="1" stop-color="#1f647f"/>
+      <stop stop-color="#a13d3d"/>
+      <stop offset="1" stop-color="#681c1c"/>
     </linearGradient>
   </defs>
 
