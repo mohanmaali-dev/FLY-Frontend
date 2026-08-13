@@ -566,7 +566,7 @@ const JoinPairingPage = () => {
     <div className="flex min-h-screen flex-col bg-surface text-ink">
       {/* Same structure and widths as the host, so the two sides read as one
           product rather than a desktop app and a separate mobile page. */}
-      <AppHeader>
+      <AppHeader homeTo={`/pair/${sessionId}`} preserveSession>
         <span
           className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium shadow-[var(--shadow-card)] ${
             ['offline', 'reconnecting', 'disconnected'].includes(connectionStatus)
@@ -620,7 +620,7 @@ const JoinPairingPage = () => {
       </main>
 
       {/* Compact: a live session on a phone does not need the brand blurb. */}
-      <Footer />
+      <Footer homeTo={`/pair/${sessionId}`} preserveSession />
 
       <ConfirmDialog
         open={confirmingDisconnect}
