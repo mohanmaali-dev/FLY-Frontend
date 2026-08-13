@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   FiArrowDownLeft,
   FiArrowUpRight,
@@ -12,12 +12,30 @@ import {
   FiMaximize2,
   FiMessageCircle,
   FiMusic,
+  FiRefreshCw,
+  FiSearch,
+  FiTrash2,
   FiVideo,
 } from 'react-icons/fi'
 
 import ImageLightbox from './ImageLightbox.jsx'
 import { useToast } from './Toast.jsx'
 import { copyText } from '../utils/browser.js'
+import { refreshPairingFileUrl } from '../services/storage.service.js'
+
+const TRANSFER_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'text', label: 'Text' },
+  { id: 'link', label: 'Links' },
+  { id: 'file', label: 'Files' },
+]
+
+const getItemType = (item) => {
+  if (item.itemType) return item.itemType
+  if (item.fileUrl) return 'file'
+  if (item.url) return 'link'
+  return 'text'
+}
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B'
@@ -43,13 +61,37 @@ function getFileTypeLabel(mimeType = '') {
   return mimeType.split('/')[1]?.toUpperCase() || 'File'
 }
 
-export function SharedItemsList({ items = [] }) {
+export function SharedItemsList({ items = [], onRetryItem, onRemoveItem }) {
   const [copiedId, setCopiedId] = useState(null)
   const [previewItem, setPreviewItem] = useState(null)
+  const [busyId, setBusyId] = useState(null)
+  const [query, setQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [directionFilter, setDirectionFilter] = useState('all')
+  const [resolvedUrls, setResolvedUrls] = useState({})
+  const [downloadingAll, setDownloadingAll] = useState(false)
   const listRef = useRef(null)
   const { toast } = useToast()
 
   const newestItemId = items?.[0]?.id
+
+  const filteredItems = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return items.filter((item) => {
+      const isYou = item.sender === 'You'
+      const typeMatches = typeFilter === 'all' || getItemType(item) === typeFilter
+      const directionMatches =
+        directionFilter === 'all' ||
+        (directionFilter === 'sent' ? isYou : !isYou)
+      const searchable = [item.text, item.url, item.fileName, item.sender]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return typeMatches && directionMatches && (!needle || searchable.includes(needle))
+    })
+  }, [directionFilter, items, query, typeFilter])
+
+  const visibleFiles = filteredItems.filter((item) => getItemType(item) === 'file')
 
   useEffect(() => {
     if (!newestItemId) return
@@ -62,6 +104,84 @@ export function SharedItemsList({ items = [] }) {
     setCopiedId(itemId)
     setTimeout(() => setCopiedId(null), 2000)
     toast({ tone: 'success', title: 'Copied to clipboard', duration: 2500 })
+  }
+
+  const retryItem = async (item) => {
+    if (!onRetryItem || busyId) return
+    setBusyId(item.id)
+    try {
+      await onRetryItem(item.id)
+      toast({ tone: 'success', title: 'Transfer sent again' })
+    } catch {
+      toast({ tone: 'error', title: 'Retry failed', description: 'Check the connection and try again.' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const removeItem = async (item) => {
+    if (!onRemoveItem || busyId) return
+    setBusyId(item.id)
+    try {
+      await onRemoveItem(item.id)
+      toast({ tone: 'success', title: item.fileUrl ? 'File deleted' : 'Transfer removed' })
+    } catch {
+      toast({ tone: 'error', title: 'Could not remove transfer' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const resolveFileUrl = async (item) => {
+    if (!item.storagePath) return item.fileUrl
+    const freshUrl = await refreshPairingFileUrl(item.storagePath)
+    setResolvedUrls((current) => ({ ...current, [item.id]: freshUrl }))
+    return freshUrl
+  }
+
+  const startDownload = (url, fileName) => {
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName || 'shared-file'
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  }
+
+  const downloadItem = async (item) => {
+    if (busyId) return
+    setBusyId(item.id)
+    try {
+      startDownload(await resolveFileUrl(item), item.fileName)
+    } catch {
+      toast({ tone: 'error', title: 'Download link expired', description: 'Reconnect to the live session and try again.' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const downloadVisibleFiles = async () => {
+    if (!visibleFiles.length || downloadingAll) return
+    setDownloadingAll(true)
+    let started = 0
+
+    for (const item of visibleFiles) {
+      try {
+        startDownload(await resolveFileUrl(item), item.fileName)
+        started += 1
+      } catch {
+        /* continue with the remaining files */
+      }
+    }
+
+    toast({
+      tone: started ? 'success' : 'error',
+      title: started ? `${started} ${started === 1 ? 'download' : 'downloads'} started` : 'Downloads could not start',
+      description: started > 1 ? 'Your browser may ask permission for multiple downloads.' : '',
+    })
+    setDownloadingAll(false)
   }
 
   if (!items || items.length === 0) {
@@ -80,7 +200,40 @@ export function SharedItemsList({ items = [] }) {
 
   return (
     <div ref={listRef} className="space-y-4">
-        {items.map((item, index) => {
+      <div className="rounded-xl border border-line bg-surface p-3 shadow-[var(--shadow-card)]">
+        <div className="relative">
+          <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-mute" size={14} aria-hidden="true" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} type="search" placeholder="Search transfers" aria-label="Search transfers" className="w-full rounded-lg border border-line-strong bg-raised py-2 pl-9 pr-3 text-sm text-ink placeholder-ink-mute" />
+        </div>
+        <div className="mt-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-1 overflow-x-auto" role="group" aria-label="Filter by transfer type">
+            {TRANSFER_FILTERS.map((filter) => (
+              <button key={filter.id} type="button" aria-pressed={typeFilter === filter.id} onClick={() => setTypeFilter(filter.id)} className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${typeFilter === filter.id ? 'bg-accent-soft text-accent-hover' : 'text-ink-mute hover:bg-raised hover:text-ink'}`}>{filter.label}</button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <select value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)} aria-label="Filter by transfer direction" className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink-soft sm:flex-none">
+              <option value="all">Sent & received</option>
+              <option value="sent">Sent by me</option>
+              <option value="received">Received</option>
+            </select>
+            {visibleFiles.length > 0 && (
+              <button type="button" onClick={downloadVisibleFiles} disabled={downloadingAll} className="flex shrink-0 items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-soft transition hover:border-line-strong hover:text-ink disabled:opacity-50"><FiDownload size={12} />{downloadingAll ? 'Preparing…' : `Download ${visibleFiles.length}`}</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <p className="sr-only" aria-live="polite">{filteredItems.length} transfers shown</p>
+
+      {filteredItems.length === 0 && (
+        <div className="rounded-xl border border-dashed border-line-strong bg-surface/70 px-6 py-10 text-center">
+          <p className="text-sm font-semibold text-ink">No matching transfers</p>
+          <p className="mt-1 text-xs text-ink-mute">Change the search or filters to see more activity.</p>
+        </div>
+      )}
+
+        {filteredItems.map((item, index) => {
           const itemId = item.id || `item-${index}`
           const isYou = item.sender === 'You'
           const isText = item.itemType === 'text' || (!item.itemType && item.text && !item.url && !item.fileUrl)
@@ -104,16 +257,24 @@ export function SharedItemsList({ items = [] }) {
                   <span className="truncate text-sm font-medium text-ink">
                     {isYou ? 'You' : item.sender}
                   </span>
+                  {isYou && item.deliveryStatus && (
+                    <span className={`text-[0.68rem] font-medium ${item.deliveryStatus === 'failed' ? 'text-danger' : item.deliveryStatus === 'delivered' ? 'text-ok' : 'text-ink-mute'}`}>
+                      {item.deliveryStatus === 'sending' ? 'Sending…' : item.deliveryStatus === 'sent' ? 'Sent' : item.deliveryStatus === 'delivered' ? 'Delivered' : 'Failed'}
+                    </span>
+                  )}
                 </div>
 
-                <time dateTime={item.timestamp || undefined} className="shrink-0 text-xs text-ink-mute">
-                  {item.timestamp
-                    ? new Date(item.timestamp).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : 'Just now'}
-                </time>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <time dateTime={item.timestamp || undefined} className="text-xs text-ink-mute">
+                    {item.timestamp ? new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                  </time>
+                  {isYou && item.deliveryStatus === 'failed' && onRetryItem && (
+                    <button type="button" onClick={() => retryItem(item)} disabled={busyId === itemId} aria-label="Retry failed transfer" title="Retry" className="rounded-md p-1.5 text-danger transition hover:bg-danger-soft disabled:opacity-50"><FiRefreshCw size={13} className={busyId === itemId ? 'animate-spin' : ''} /></button>
+                  )}
+                  {onRemoveItem && (
+                    <button type="button" onClick={() => removeItem(item)} disabled={busyId === itemId} aria-label={`Remove ${item.fileName || 'transfer'}`} title={item.fileUrl ? 'Delete file and remove' : 'Remove transfer'} className="rounded-md p-1.5 text-ink-mute transition hover:bg-danger-soft hover:text-danger disabled:opacity-50"><FiTrash2 size={13} /></button>
+                  )}
+                </div>
               </div>
 
               {/* Item Content Area */}
@@ -211,17 +372,16 @@ export function SharedItemsList({ items = [] }) {
                         </p>
                       </div>
 
-                      <a
-                        href={item.fileUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        download={item.fileName}
+                      <button
+                        type="button"
+                        onClick={() => downloadItem(item)}
+                        disabled={busyId === itemId}
                         aria-label={`Download ${item.fileName || 'file'}`}
-                        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.97] hover:bg-accent-hover"
+                        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.97] hover:bg-accent-hover disabled:opacity-60"
                       >
-                        <FiDownload size={14} />
+                        <FiDownload size={14} className={busyId === itemId ? 'animate-pulse' : ''} />
                         <span className="hidden sm:inline">Download</span>
-                      </a>
+                      </button>
                     </div>
 
                     {/* A short thumbnail — a full-height crop of every image
@@ -234,10 +394,15 @@ export function SharedItemsList({ items = [] }) {
                         className="group relative block w-full cursor-zoom-in overflow-hidden rounded-lg border border-line"
                       >
                         <img
-                          src={item.fileUrl}
+                          src={resolvedUrls[itemId] || item.fileUrl}
                           alt={item.fileName}
                           className="h-40 w-full object-cover transition duration-300 group-hover:scale-[1.03] sm:h-48"
                           loading="lazy"
+                          onError={() => {
+                            if (!resolvedUrls[itemId] && item.storagePath) {
+                              resolveFileUrl(item).catch(() => {})
+                            }
+                          }}
                         />
 
                         <span className="absolute inset-0 flex items-center justify-center bg-ink/0 transition group-hover:bg-ink/35">
@@ -251,7 +416,7 @@ export function SharedItemsList({ items = [] }) {
 
                     {item.mimeType && item.mimeType.startsWith('video/') && (
                       <video
-                        src={item.fileUrl}
+                        src={resolvedUrls[itemId] || item.fileUrl}
                         controls
                         preload="metadata"
                         className="max-h-64 w-full rounded-lg border border-line bg-ink"
@@ -262,7 +427,7 @@ export function SharedItemsList({ items = [] }) {
 
                     {item.mimeType && item.mimeType.startsWith('audio/') && (
                       <audio
-                        src={item.fileUrl}
+                        src={resolvedUrls[itemId] || item.fileUrl}
                         controls
                         preload="metadata"
                         className="w-full"
@@ -277,7 +442,7 @@ export function SharedItemsList({ items = [] }) {
           )
         })}
 
-      <ImageLightbox item={previewItem} onClose={() => setPreviewItem(null)} />
+      <ImageLightbox item={previewItem ? { ...previewItem, fileUrl: resolvedUrls[previewItem.id] || previewItem.fileUrl } : null} onClose={() => setPreviewItem(null)} />
     </div>
   )
 }

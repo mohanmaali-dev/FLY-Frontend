@@ -5,7 +5,10 @@ import { LuQrCode } from 'react-icons/lu'
 
 import { randomUUID } from '../utils/browser.js'
 import { toUserMessage, userError } from '../utils/errors.js'
+import { addOrReplaceTransfer } from '../utils/transfer.js'
+import { recordEvent } from '../services/telemetry.service.js'
 import { getDeviceInfo } from '../utils/device.js'
+import { deletePairingFile } from '../services/storage.service.js'
 import {
   destroyPairingSession,
   resolvePairingSession,
@@ -94,7 +97,9 @@ function getOrCreateJoinDevice(sessionId) {
     ...base,
     // Give it a fresh UUID so it never equals the host's localStorage device
     id: randomUUID(),
+    joinedAt: Date.now(),
     name: `${base.name} (Guest)`,
+    role: 'guest',
   }
 
   try {
@@ -119,6 +124,8 @@ const JoinPairingPage = () => {
     navigator.onLine ? 'connecting' : 'offline',
   )
   const [reconnectToken, setReconnectToken] = useState(0)
+  const [deviceRevision, setDeviceRevision] = useState(0)
+  const [sessionFull, setSessionFull] = useState(false)
 
   // Loaded synchronously from the id in the URL so the feed is populated on the
   // very first render and the save effect below cannot clobber it.
@@ -126,12 +133,20 @@ const JoinPairingPage = () => {
 
   const channelRef = useRef(null)
   const previousPairedRef = useRef(false)
+  const reconnectAttemptsRef = useRef(0)
+  const recoveryNeededRef = useRef(true)
+  const recoveringTransfersRef = useRef(false)
 
   // Hoisted out of the connect effect so the render can tell our own device
   // apart from the host's when listing who is on the session.
   const joinDevice = useMemo(
-    () => (session?.sessionId ? getOrCreateJoinDevice(session.sessionId) : null),
-    [session?.sessionId],
+    () => {
+      // The revision changes after a rename, causing this sessionStorage-backed
+      // value to be read again without giving the device a new identity.
+      void deviceRevision
+      return session?.sessionId ? getOrCreateJoinDevice(session.sessionId) : null
+    },
+    [session?.sessionId, deviceRevision],
   )
 
   const otherDevices = devices.filter((device) => device.id !== joinDevice?.id)
@@ -174,9 +189,18 @@ const JoinPairingPage = () => {
         sessionId: session.sessionId,
         device: joinDevice,
         onDevices: (list) => {
+          const admitted = list.some((entry) => entry.id === joinDevice.id)
+          if (!admitted && list.length >= 2) {
+            setSessionFull(true)
+            setDevices([])
+            return
+          }
+
+          setSessionFull(false)
           const nowPaired = list.length > 1
           setDevices(list)
           if (nowPaired && !previousPairedRef.current) {
+            recordEvent('pairing_connected', { side: 'guest' })
             const peer = list.find((entry) => entry.id !== joinDevice.id)
             toast({
               tone: 'success',
@@ -186,8 +210,12 @@ const JoinPairingPage = () => {
           }
           previousPairedRef.current = nowPaired
         },
+        onFull: () => {
+          setSessionFull(true)
+          setDevices([])
+        },
         onMessage: (payload) => {
-          setReceivedMessages((current) => [payload, ...current])
+          setReceivedMessages((current) => addOrReplaceTransfer(current, payload))
           toast({
             tone: 'info',
             title: 'New transfer received',
@@ -207,11 +235,26 @@ const JoinPairingPage = () => {
           clearHistory(session.sessionId)
           setReceivedMessages([])
         },
+        onDelivery: (id) => {
+          setReceivedMessages((items) => items.map((item) =>
+            item.id === id ? { ...item, deliveryStatus: 'delivered' } : item,
+          ))
+        },
+        onRemoved: (id) => {
+          setReceivedMessages((items) => items.filter((item) => item.id !== id))
+          toast({ tone: 'info', title: 'A shared item was removed' })
+        },
         onStatus: (status) => {
           setConnectionStatus(status)
-          if (status === 'connected') setError('')
+          if (status === 'connected') {
+            reconnectAttemptsRef.current = 0
+            setError('')
+          }
         },
-        onError: (message) => setError(message),
+        onError: (message) => {
+          recordEvent('reconnect_failed', { side: 'guest' })
+          setError(message)
+        },
       })
     }, 0)
 
@@ -240,6 +283,34 @@ const JoinPairingPage = () => {
     }
   }, [])
 
+  useEffect(() => {
+    if (!session?.sessionId || !navigator.onLine) return
+    if (!['reconnecting', 'disconnected'].includes(connectionStatus)) return
+
+    const delay = Math.min(1_000 * 2 ** reconnectAttemptsRef.current, 15_000)
+    const timer = setTimeout(() => {
+      reconnectAttemptsRef.current += 1
+      setReconnectToken((value) => value + 1)
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [connectionStatus, session?.sessionId])
+
+  useEffect(() => {
+    if (!session?.sessionId || ended) return
+
+    const timer = setInterval(async () => {
+      try {
+        setSession(await resolvePairingSession(session.sessionId))
+      } catch {
+        clearHistory(session.sessionId)
+        setReceivedMessages([])
+        setEnded('This session expired. Start a new session to continue sharing.')
+      }
+    }, 60_000)
+
+    return () => clearInterval(timer)
+  }, [ended, session?.sessionId])
+
   // ── Send ───────────────────────────────────────────────────────────────────
   // Rejections bubble to ShareControls, which shows them next to the form.
   // Routing them into `error` would replace the page with the fatal screen.
@@ -250,10 +321,115 @@ const JoinPairingPage = () => {
       throw userError('Not connected yet. Waiting for the other device.')
     }
 
-    const sent = await handle.send(payload)
+    const pending = {
+      ...payload,
+      id: payload.id || randomUUID(),
+      sender: 'You',
+      senderId: joinDevice.id,
+      timestamp: payload.timestamp || new Date().toISOString(),
+      deliveryStatus: 'sending',
+    }
+    setReceivedMessages((items) => addOrReplaceTransfer(items, pending))
 
-    setReceivedMessages((prev) => [{ ...sent, sender: 'You' }, ...prev])
+    try {
+      const sent = await handle.send(pending)
+      setReceivedMessages((items) => items.map((item) =>
+        item.id === pending.id
+          ? { ...sent, sender: 'You', deliveryStatus: item.deliveryStatus === 'delivered' ? 'delivered' : 'sent' }
+          : item,
+      ))
+      return sent
+    } catch (sendError) {
+      setReceivedMessages((items) => items.map((item) =>
+        item.id === pending.id ? { ...item, deliveryStatus: 'failed' } : item,
+      ))
+      throw sendError
+    }
   }
+
+  const handleRetryItem = async (itemId) => {
+    const item = receivedMessages.find((entry) => entry.id === itemId)
+    const handle = channelRef.current
+    if (!item || !handle) throw userError('Reconnect before retrying this transfer.')
+
+    setReceivedMessages((items) => items.map((entry) =>
+      entry.id === itemId ? { ...entry, deliveryStatus: 'sending' } : entry,
+    ))
+    try {
+      await handle.send(item)
+      setReceivedMessages((items) => items.map((entry) =>
+        entry.id === itemId && entry.deliveryStatus !== 'delivered'
+          ? { ...entry, deliveryStatus: 'sent' }
+          : entry,
+      ))
+    } catch (retryError) {
+      setReceivedMessages((items) => items.map((entry) =>
+        entry.id === itemId ? { ...entry, deliveryStatus: 'failed' } : entry,
+      ))
+      throw retryError
+    }
+  }
+
+  const handleRemoveItem = async (itemId) => {
+    const item = receivedMessages.find((entry) => entry.id === itemId)
+    if (!item) return
+    if (item.storagePath) await deletePairingFile(item.storagePath)
+    if (channelRef.current) await channelRef.current.removeItem(itemId)
+    setReceivedMessages((items) => items.filter((entry) => entry.id !== itemId))
+  }
+
+  const handleRenameDevice = async (name) => {
+    const nextName = name.trim().replace(/\s+/g, ' ').slice(0, 48)
+    if (nextName.length < 2) throw userError('Use at least 2 characters for the device name.')
+    const updated = { ...joinDevice, name: nextName }
+    sessionStorage.setItem(`join_device_${session.sessionId}`, JSON.stringify(updated))
+    await channelRef.current?.updateDevice(updated)
+    setDevices((list) => list.map((device) => device.id === updated.id ? updated : device))
+    setDeviceRevision((value) => value + 1)
+  }
+
+  useEffect(() => {
+    if (connectionStatus !== 'connected' || !paired) {
+      recoveryNeededRef.current = true
+      return
+    }
+    if (!recoveryNeededRef.current || recoveringTransfersRef.current) return
+
+    const failed = receivedMessages.filter(
+      (item) => item.sender === 'You' && item.deliveryStatus === 'failed',
+    )
+    recoveryNeededRef.current = false
+    if (!failed.length || !channelRef.current) return
+
+    recoveringTransfersRef.current = true
+    const recover = async () => {
+      let recovered = 0
+      for (const item of failed) {
+        try {
+          setReceivedMessages((items) => items.map((entry) =>
+            entry.id === item.id ? { ...entry, deliveryStatus: 'sending' } : entry,
+          ))
+          await channelRef.current?.send(item)
+          setReceivedMessages((items) => items.map((entry) =>
+            entry.id === item.id && entry.deliveryStatus !== 'delivered'
+              ? { ...entry, deliveryStatus: 'sent' }
+              : entry,
+          ))
+          recovered += 1
+        } catch {
+          setReceivedMessages((items) => items.map((entry) =>
+            entry.id === item.id ? { ...entry, deliveryStatus: 'failed' } : entry,
+          ))
+        }
+      }
+      if (recovered) {
+        toast({ tone: 'success', title: `${recovered} queued ${recovered === 1 ? 'transfer' : 'transfers'} recovered` })
+      }
+      recoveringTransfersRef.current = false
+    }
+
+    recover()
+  }, [connectionStatus, paired, receivedMessages, toast])
 
   const handleClearActivity = async () => {
     const handle = channelRef.current
@@ -345,6 +521,24 @@ const JoinPairingPage = () => {
     )
   }
 
+  if (sessionFull) {
+    return (
+      <StatusShell>
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-warn-soft text-warn">
+          <FiAlertTriangle size={20} />
+        </div>
+        <h1 className="mt-6 text-xl font-semibold tracking-tight">Session already full</h1>
+        <p className="mt-3 text-base leading-relaxed text-ink-soft">
+          FLY allows two devices per session. Ask one device to disconnect, or start a separate session.
+        </p>
+        <Link to="/" className={START_BUTTON}>
+          <LuQrCode size={16} />
+          Start another session
+        </Link>
+      </StatusShell>
+    )
+  }
+
   if (error && !session) {
     return (
       <StatusShell>
@@ -407,6 +601,7 @@ const JoinPairingPage = () => {
           summary={connectionSummary}
           items={receivedMessages}
           sessionId={session?.sessionId}
+          expiresAt={session?.expiresAt}
           error={error}
           connectionStatus={connectionStatus}
           disabled={!paired}
@@ -415,6 +610,9 @@ const JoinPairingPage = () => {
           onSendLink={(url, text) => handleSendPayload({ itemType: 'link', url, text })}
           onSendFile={(fileData) => handleSendPayload({ itemType: 'file', ...fileData })}
           onClearActivity={handleClearActivity}
+          onRetryItem={handleRetryItem}
+          onRemoveItem={handleRemoveItem}
+          onRenameDevice={handleRenameDevice}
           onRetryConnection={() => setReconnectToken((value) => value + 1)}
           onDisconnect={() => setConfirmingDisconnect(true)}
           disconnecting={disconnecting}

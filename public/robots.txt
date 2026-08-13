@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+Disallow: /pair/
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /notes

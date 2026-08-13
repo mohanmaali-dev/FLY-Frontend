@@ -151,6 +151,18 @@ async function main() {
     listed.error ? `blocked: ${listed.error.code}` : `${listed.data?.length ?? 0} rows returned`,
   )
 
+  const browserRateLimitAttempt = await host.rpc('check_pairing_rate_limit', {
+    p_request_key: '0'.repeat(64),
+    p_request_action: 'create',
+    p_max_attempts: 1,
+    p_window_seconds: 60,
+  })
+  check(
+    'rate-limit counter is server-only',
+    Boolean(browserRateLimitAttempt.error),
+    browserRateLimitAttempt.error ? 'blocked for anon client' : 'ALLOWED — revoke the browser grant',
+  )
+
   // ── 2. Realtime presence + broadcast ──────────────────────────────────────
   const deviceA = { id: 'verify-host', name: 'Host PC', type: 'desktop' }
   const deviceB = { id: 'verify-guest', name: 'Phone', type: 'mobile' }
@@ -236,9 +248,13 @@ async function main() {
   check('upload into a live session', !upload.error, upload.error?.message || '')
 
   if (!upload.error) {
-    const { publicUrl } = host.storage.from('pairing-files').getPublicUrl(path).data
-    const download = await fetch(publicUrl)
-    check('uploaded file is publicly readable', (await download.text()) === 'hello fly')
+    const publicUrl = host.storage.from('pairing-files').getPublicUrl(path).data.publicUrl
+    const publicDownload = await fetch(publicUrl)
+    check('pairing file is not publicly readable', !publicDownload.ok, String(publicDownload.status))
+
+    const signed = await host.storage.from('pairing-files').createSignedUrl(path, 60)
+    const download = signed.data?.signedUrl ? await fetch(signed.data.signedUrl) : null
+    check('signed pairing file is readable', Boolean(download?.ok) && (await download.text()) === 'hello fly', signed.error?.message || '')
   }
 
   const badUpload = await host.storage

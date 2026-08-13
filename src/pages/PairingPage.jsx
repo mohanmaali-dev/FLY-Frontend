@@ -32,7 +32,6 @@ import ConfirmDialog from '../components/ConfirmDialog.jsx'
 import Footer from '../components/Footer.jsx'
 import SharingWorkspace from '../components/SharingWorkspace.jsx'
 import { copyText } from '../utils/browser.js'
-import { getStoredDevice } from '../utils/device-session.js'
 
 const CAPABILITIES = [
   { icon: FiFileText, label: 'Text & notes', mobileLabel: 'Text' },
@@ -82,11 +81,15 @@ function PairingPage() {
     connectionStatus,
     endedSignal,
     devices,
+    localDevice,
     sharedItems,
     sendText,
     sendLink,
     sendFile,
     clearSharedItems,
+    retrySharedItem,
+    removeSharedItem,
+    renameLocalDevice,
     disconnectSession,
     reconnectSession,
     retryConnection,
@@ -109,7 +112,7 @@ function PairingPage() {
 
   const initialisedRef = useRef(false)
 
-  const currentDevice = getStoredDevice()
+  const currentDevice = localDevice
   const otherDevices = devices.filter((d) => d.id !== currentDevice.id)
   const paired = otherDevices.length > 0
   const pairedDeviceName = paired ? otherDevices[0].name : null
@@ -222,6 +225,29 @@ function PairingPage() {
       active = false
     }
   }, [endedSignal, startFreshSession])
+
+  // Detect a server-expired session even if Realtime stays quiet. Active
+  // sessions are renewed by Presence, so this only replaces genuinely stale
+  // codes left waiting without another device.
+  useEffect(() => {
+    if (!session?.sessionId) return
+
+    const verifySession = async () => {
+      try {
+        const fresh = await getPairingSession(session.sessionId)
+        setSession(fresh)
+      } catch {
+        if (!paired) {
+          localStorage.removeItem('pairing_session_id')
+          setSession(null)
+          startFreshSession().catch(() => setSessionError('Could not renew the pairing session.'))
+        }
+      }
+    }
+
+    const timer = setInterval(verifySession, 60_000)
+    return () => clearInterval(timer)
+  }, [paired, session?.sessionId, startFreshSession])
 
   // Spelled out from what this device actually holds, so the warning is
   // concrete rather than a generic "are you sure?".
@@ -743,6 +769,7 @@ function PairingPage() {
             summary={connectionSummary}
             items={sharedItems}
             sessionId={session?.sessionId}
+            expiresAt={session?.expiresAt}
             error={connectionError}
             connectionStatus={connectionStatus}
             disabled={!paired}
@@ -751,6 +778,9 @@ function PairingPage() {
             onSendLink={sendLink}
             onSendFile={sendFile}
             onClearActivity={clearSharedItems}
+            onRetryItem={retrySharedItem}
+            onRemoveItem={removeSharedItem}
+            onRenameDevice={renameLocalDevice}
             onRetryConnection={retryConnection}
             onShowCode={() => setShowPairView(true)}
             onDisconnect={() => setConfirmingDisconnect(true)}

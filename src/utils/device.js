@@ -39,6 +39,7 @@ export const getDeviceInfo = () => {
 
   return {
     id: randomUUID(),
+    joinedAt: Date.now(),
     name: getDeviceName(type),
     type,
     browser: result.browser.name || 'Unknown Browser',

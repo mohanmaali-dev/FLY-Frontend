@@ -11,8 +11,12 @@ import {
 import { useToast } from '../components/Toast.jsx'
 import { userError } from '../utils/errors.js'
 import { destroyPairingSession } from '../services/pairing.service.js'
+import { deletePairingFile } from '../services/storage.service.js'
 import { joinPairingChannel } from '../services/realtime.service.js'
-import { getStoredDevice } from '../utils/device-session.js'
+import { getStoredDevice, renameStoredDevice } from '../utils/device-session.js'
+import { randomUUID } from '../utils/browser.js'
+import { addOrReplaceTransfer } from '../utils/transfer.js'
+import { recordEvent } from '../services/telemetry.service.js'
 
 const DeviceContext = createContext(null)
 
@@ -53,6 +57,7 @@ export const DeviceProvider = ({ children }) => {
   )
 
   const [devices, setDevices] = useState([])
+  const [localDevice, setLocalDevice] = useState(() => getStoredDevice())
   const [connected, setConnected] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState(
     sessionId ? 'connecting' : 'idle',
@@ -76,6 +81,9 @@ export const DeviceProvider = ({ children }) => {
   // needing to be declared as dependencies.
   const channelRef = useRef(null)
   const previousConnectedRef = useRef(false)
+  const reconnectAttemptsRef = useRef(0)
+  const recoveryNeededRef = useRef(true)
+  const recoveringTransfersRef = useRef(false)
 
   // ── Persist history whenever items change ─────────────────────────────────
   useEffect(() => {
@@ -103,7 +111,7 @@ export const DeviceProvider = ({ children }) => {
 
       setConnectionStatus(navigator.onLine ? 'connecting' : 'offline')
 
-      const device = getStoredDevice()
+      const device = { ...getStoredDevice(), role: 'host' }
 
       const handle = joinPairingChannel({
         sessionId: sid,
@@ -114,6 +122,7 @@ export const DeviceProvider = ({ children }) => {
           setConnected(nowConnected)
 
           if (nowConnected && !previousConnectedRef.current) {
+            recordEvent('pairing_connected', { side: 'host' })
             const peer = list.find((entry) => entry.id !== device.id)
             toast({
               tone: 'success',
@@ -124,7 +133,7 @@ export const DeviceProvider = ({ children }) => {
           previousConnectedRef.current = nowConnected
         },
         onMessage: (payload) => {
-          setSharedItems((prev) => [payload, ...prev])
+          setSharedItems((prev) => addOrReplaceTransfer(prev, payload))
           toast({
             tone: 'info',
             title: 'New transfer received',
@@ -166,11 +175,28 @@ export const DeviceProvider = ({ children }) => {
             description: 'The other device cleared the shared activity.',
           })
         },
+        onDelivery: (id) => {
+          setSharedItems((items) =>
+            items.map((item) =>
+              item.id === id ? { ...item, deliveryStatus: 'delivered' } : item,
+            ),
+          )
+        },
+        onRemoved: (id) => {
+          setSharedItems((items) => items.filter((item) => item.id !== id))
+          toast({ tone: 'info', title: 'A shared item was removed' })
+        },
         onStatus: (status) => {
           setConnectionStatus(status)
-          if (status === 'connected') setConnectionError('')
+          if (status === 'connected') {
+            reconnectAttemptsRef.current = 0
+            setConnectionError('')
+          }
         },
-        onError: (message) => setConnectionError(message),
+        onError: (message) => {
+          recordEvent('reconnect_failed', { side: 'host' })
+          setConnectionError(message)
+        },
       })
 
       setConnectionError('')
@@ -213,6 +239,22 @@ export const DeviceProvider = ({ children }) => {
       window.removeEventListener('online', handleOnline)
     }
   }, [openChannel, sessionId])
+
+  // Reconnect automatically with a capped exponential delay. Manual retry and
+  // the browser online event still reconnect immediately.
+  useEffect(() => {
+    if (!sessionId || !navigator.onLine) return
+    if (!['reconnecting', 'disconnected'].includes(connectionStatus)) return
+
+    const attempt = reconnectAttemptsRef.current
+    const delay = Math.min(1_000 * 2 ** attempt, 15_000)
+    const timer = setTimeout(() => {
+      reconnectAttemptsRef.current += 1
+      openChannel(sessionId)
+    }, delay)
+
+    return () => clearTimeout(timer)
+  }, [connectionStatus, openChannel, sessionId])
 
   // ── Public API ────────────────────────────────────────────────────────────
 
@@ -270,12 +312,35 @@ export const DeviceProvider = ({ children }) => {
       throw userError('Not connected. Waiting for the other device.')
     }
 
-    // realtime.service builds the canonical message (id, timestamp, sender),
-    // so the local copy and the remote copy cannot drift apart.
-    const sent = await handle.send(payload)
+    const pending = {
+      ...payload,
+      id: payload.id || randomUUID(),
+      sender: 'You',
+      senderId: localDevice.id,
+      timestamp: payload.timestamp || new Date().toISOString(),
+      deliveryStatus: 'sending',
+    }
+    setSharedItems((items) => addOrReplaceTransfer(items, pending))
 
-    setSharedItems((prev) => [{ ...sent, sender: 'You' }, ...prev])
-  }, [])
+    try {
+      const sent = await handle.send(pending)
+      setSharedItems((items) =>
+        items.map((item) =>
+          item.id === pending.id
+            ? { ...sent, sender: 'You', deliveryStatus: item.deliveryStatus === 'delivered' ? 'delivered' : 'sent' }
+            : item,
+        ),
+      )
+      return sent
+    } catch (error) {
+      setSharedItems((items) =>
+        items.map((item) =>
+          item.id === pending.id ? { ...item, deliveryStatus: 'failed' } : item,
+        ),
+      )
+      throw error
+    }
+  }, [localDevice.id])
 
   const sendText = useCallback(
     (text) => sendMessagePayload({ itemType: 'text', text }),
@@ -302,14 +367,100 @@ export const DeviceProvider = ({ children }) => {
     setSharedItems([])
   }, [])
 
+  const retrySharedItem = useCallback(async (itemId) => {
+    const item = sharedItems.find((entry) => entry.id === itemId)
+    const handle = channelRef.current
+    if (!item || !handle) throw userError('Reconnect before retrying this transfer.')
+
+    setSharedItems((items) => items.map((entry) =>
+      entry.id === itemId ? { ...entry, deliveryStatus: 'sending' } : entry,
+    ))
+
+    try {
+      await handle.send(item)
+      setSharedItems((items) => items.map((entry) =>
+        entry.id === itemId && entry.deliveryStatus !== 'delivered'
+          ? { ...entry, deliveryStatus: 'sent' }
+          : entry,
+      ))
+    } catch (error) {
+      setSharedItems((items) => items.map((entry) =>
+        entry.id === itemId ? { ...entry, deliveryStatus: 'failed' } : entry,
+      ))
+      throw error
+    }
+  }, [sharedItems])
+
+  const removeSharedItem = useCallback(async (itemId) => {
+    const item = sharedItems.find((entry) => entry.id === itemId)
+    if (!item) return
+
+    if (item.storagePath) await deletePairingFile(item.storagePath)
+    if (channelRef.current) await channelRef.current.removeItem(itemId)
+    setSharedItems((items) => items.filter((entry) => entry.id !== itemId))
+  }, [sharedItems])
+
+  const renameLocalDevice = useCallback(async (name) => {
+    const updated = { ...renameStoredDevice(name), role: 'host' }
+    setLocalDevice(updated)
+    setDevices((list) => list.map((device) => device.id === updated.id ? updated : device))
+    await channelRef.current?.updateDevice(updated)
+    return updated
+  }, [])
+
   const retryConnection = useCallback(() => {
     if (sessionId) openChannel(sessionId)
   }, [openChannel, sessionId])
+
+  useEffect(() => {
+    if (connectionStatus !== 'connected' || !connected) {
+      recoveryNeededRef.current = true
+      return
+    }
+    if (!recoveryNeededRef.current || recoveringTransfersRef.current) return
+
+    const failed = sharedItems.filter(
+      (item) => item.sender === 'You' && item.deliveryStatus === 'failed',
+    )
+    recoveryNeededRef.current = false
+    if (!failed.length || !channelRef.current) return
+
+    recoveringTransfersRef.current = true
+    const recover = async () => {
+      let recovered = 0
+      for (const item of failed) {
+        try {
+          setSharedItems((items) => items.map((entry) =>
+            entry.id === item.id ? { ...entry, deliveryStatus: 'sending' } : entry,
+          ))
+          await channelRef.current?.send(item)
+          setSharedItems((items) => items.map((entry) =>
+            entry.id === item.id && entry.deliveryStatus !== 'delivered'
+              ? { ...entry, deliveryStatus: 'sent' }
+              : entry,
+          ))
+          recovered += 1
+        } catch {
+          setSharedItems((items) => items.map((entry) =>
+            entry.id === item.id ? { ...entry, deliveryStatus: 'failed' } : entry,
+          ))
+        }
+      }
+
+      if (recovered) {
+        toast({ tone: 'success', title: `${recovered} queued ${recovered === 1 ? 'transfer' : 'transfers'} recovered` })
+      }
+      recoveringTransfersRef.current = false
+    }
+
+    recover()
+  }, [connected, connectionStatus, sharedItems, toast])
 
   return (
     <DeviceContext.Provider
       value={{
         devices,
+        localDevice,
         connected,
         connectionStatus,
         connectionError,
@@ -321,6 +472,9 @@ export const DeviceProvider = ({ children }) => {
         sendLink,
         sendFile,
         clearSharedItems,
+        retrySharedItem,
+        removeSharedItem,
+        renameLocalDevice,
         retryConnection,
         disconnectSession,
         reconnectSession,

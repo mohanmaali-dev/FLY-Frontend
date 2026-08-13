@@ -1,44 +1,124 @@
-import { supabase, unwrap } from './supabase.js'
+import { supabase, supabaseConfig, unwrap } from './supabase.js'
 import { randomUUID } from '../utils/browser.js'
 import { userError } from '../utils/errors.js'
+import { MAX_FILE_BYTES, validateShareFile } from '../utils/transfer.js'
 
 const PAIRING_BUCKET = 'pairing-files'
 const NOTE_BUCKET = 'note-images'
 
-export const MAX_FILE_BYTES = 50 * 1024 * 1024
+export { MAX_FILE_BYTES }
 
 // Storage keys must be ASCII-safe; the original name is kept in the message
 // payload so the receiving device still shows and downloads it correctly.
 const safeName = (name) =>
   name.replace(/[^\w.-]+/g, '_').slice(-96) || 'file'
 
-const publicUrl = (bucket, path) =>
-  supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl
+const encodeStoragePath = (path) =>
+  path.split('/').map((segment) => encodeURIComponent(segment)).join('/')
+
+const createSignedUrl = async (bucket, path, expiresIn = 60 * 60) => {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn)
+  if (error || !data?.signedUrl) {
+    throw userError('The file uploaded, but its secure download link could not be created.')
+  }
+  return data.signedUrl
+}
+
+export const refreshPairingFileUrl = async (storagePath) => {
+  if (!storagePath) throw userError('This file does not have a secure storage path.')
+  return createSignedUrl(PAIRING_BUCKET, storagePath)
+}
 
 /**
  * Uploads into a folder named after the pairing session. The storage policy
  * rejects any path whose first segment is not a live session, so an expired
  * or made-up id cannot be used to park files in the bucket.
  */
-export const uploadPairingFile = async (sessionId, file) => {
-  if (file.size > MAX_FILE_BYTES) {
-    throw userError('That file is too large. The limit is 50 MB.')
-  }
+export const uploadPairingFile = async (
+  sessionId,
+  file,
+  { onProgress, signal } = {},
+) => {
+  const validationError = validateShareFile(file)
+  if (validationError) throw userError(validationError)
 
   const path = `${sessionId}/${randomUUID()}-${safeName(file.name)}`
+  const endpoint = `${supabaseConfig.url}/storage/v1/object/${PAIRING_BUCKET}/${encodeStoragePath(path)}`
 
-  unwrap(
-    await supabase.storage
-      .from(PAIRING_BUCKET)
-      .upload(path, file, { contentType: file.type || 'application/octet-stream' }),
-  )
+  await new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    let settled = false
+
+    const finish = (callback) => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener('abort', abortUpload)
+      callback()
+    }
+
+    const abortUpload = () => {
+      request.abort()
+      finish(() => reject(userError('Upload cancelled.')))
+    }
+
+    request.open('POST', endpoint)
+    request.setRequestHeader('apikey', supabaseConfig.anonKey)
+    request.setRequestHeader('Authorization', `Bearer ${supabaseConfig.anonKey}`)
+    request.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+    request.setRequestHeader('x-upsert', 'false')
+
+    request.upload.addEventListener('progress', (event) => {
+      if (!event.lengthComputable) return
+      onProgress?.(Math.min(99, Math.round((event.loaded / event.total) * 100)))
+    })
+
+    request.addEventListener('load', () => {
+      if (request.status >= 200 && request.status < 300) {
+        onProgress?.(100)
+        finish(resolve)
+        return
+      }
+
+      let detail = ''
+      try {
+        const body = JSON.parse(request.responseText)
+        detail = body.message || body.error || ''
+      } catch {
+        detail = request.statusText
+      }
+      finish(() => reject(userError(detail || 'File upload failed.')))
+    })
+
+    request.addEventListener('error', () =>
+      finish(() => reject(userError('Upload interrupted. Check your connection and try again.'))),
+    )
+    request.addEventListener('abort', () =>
+      finish(() => reject(userError('Upload cancelled.'))),
+    )
+
+    signal?.addEventListener('abort', abortUpload, { once: true })
+    if (signal?.aborted) {
+      abortUpload()
+      return
+    }
+
+    request.send(file)
+  })
+
+  const fileUrl = await createSignedUrl(PAIRING_BUCKET, path)
 
   return {
     fileName: file.name,
-    fileUrl: publicUrl(PAIRING_BUCKET, path),
+    fileUrl,
+    storagePath: path,
     fileSize: file.size,
     mimeType: file.type || '',
   }
+}
+
+export const deletePairingFile = async (storagePath) => {
+  if (!storagePath) return
+  unwrap(await supabase.storage.from(PAIRING_BUCKET).remove([storagePath]))
 }
 
 /**
@@ -96,5 +176,7 @@ export const uploadNoteImage = async (userId, file) => {
       .upload(path, file, { contentType: file.type }),
   )
 
-  return publicUrl(NOTE_BUCKET, path)
+  // Note images remain public because notes persist beyond a short pairing
+  // session and are already protected by authenticated write ownership.
+  return supabase.storage.from(NOTE_BUCKET).getPublicUrl(path).data.publicUrl
 }

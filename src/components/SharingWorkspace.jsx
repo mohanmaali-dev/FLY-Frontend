@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   FiArrowRight,
   FiMonitor,
+  FiEdit2,
   FiPower,
   FiRefreshCw,
   FiSmartphone,
@@ -41,9 +42,14 @@ function DeviceIdentity({ device, label, connected = false }) {
         <p className="font-mono text-[0.6rem] font-medium uppercase tracking-[0.13em] text-ink-mute">
           {label}
         </p>
-        <p className="mt-1 truncate text-sm font-semibold text-ink">
+        <p className="mt-1 truncate text-sm font-semibold text-ink" title={device?.name}>
           {device?.name || 'Waiting for device'}
         </p>
+        {device && (
+          <p className="mt-0.5 hidden truncate text-[0.68rem] text-ink-mute sm:block">
+            {[device.browser, device.os].filter((value) => value && !value.startsWith('Unknown')).join(' · ') || device.type}
+          </p>
+        )}
       </div>
     </div>
   )
@@ -56,6 +62,7 @@ export function SharingWorkspace({
   summary,
   items = [],
   sessionId,
+  expiresAt,
   error = '',
   connectionStatus = 'connected',
   disabled = false,
@@ -64,6 +71,9 @@ export function SharingWorkspace({
   onSendLink,
   onSendFile,
   onClearActivity,
+  onRetryItem,
+  onRemoveItem,
+  onRenameDevice,
   onRetryConnection,
   onShowCode,
   onDisconnect,
@@ -71,6 +81,10 @@ export function SharingWorkspace({
 }) {
   const [confirmingClear, setConfirmingClear] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const [deviceName, setDeviceName] = useState(localDevice?.name || '')
+  const [savingName, setSavingName] = useState(false)
+  const [minutesLeft, setMinutesLeft] = useState(null)
   const { toast } = useToast()
   const connectionInterrupted = ['offline', 'reconnecting', 'disconnected'].includes(
     connectionStatus,
@@ -83,6 +97,31 @@ export function SharingWorkspace({
     offline: 'You are offline',
     disconnected: 'Connection interrupted',
   }[connectionStatus] || 'Checking connection'
+
+  useEffect(() => setDeviceName(localDevice?.name || ''), [localDevice?.name])
+
+  useEffect(() => {
+    if (!expiresAt) return
+    const update = () => setMinutesLeft(Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 60_000)))
+    update()
+    const timer = setInterval(update, 30_000)
+    return () => clearInterval(timer)
+  }, [expiresAt])
+
+  const saveDeviceName = async (event) => {
+    event.preventDefault()
+    if (!onRenameDevice || savingName) return
+    setSavingName(true)
+    try {
+      await onRenameDevice(deviceName)
+      setEditingName(false)
+      toast({ tone: 'success', title: 'Device name updated' })
+    } catch (error) {
+      toast({ tone: 'error', title: 'Could not rename device', description: toUserMessage(error) })
+    } finally {
+      setSavingName(false)
+    }
+  }
 
   const clearActivity = async () => {
     if (!onClearActivity || clearing) return
@@ -133,11 +172,18 @@ export function SharingWorkspace({
           </p>
         </div>
 
-        {items.length > 0 && (
-          <span className="w-fit rounded-full border border-line bg-raised px-3 py-1.5 text-xs tabular-nums text-ink-soft">
-            {items.length} transfer{items.length === 1 ? '' : 's'}
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {paired ? (
+            <span className="w-fit rounded-full border border-ok-line bg-ok-soft px-3 py-1.5 text-xs text-ok" title="Active sessions renew automatically">Session active</span>
+          ) : minutesLeft !== null && (
+            <span className="w-fit rounded-full border border-line bg-raised px-3 py-1.5 text-xs tabular-nums text-ink-soft" title="Active sessions renew automatically">
+              {minutesLeft > 0 ? `Expires in ${minutesLeft} min` : 'Renewing session'}
+            </span>
+          )}
+          {items.length > 0 && (
+            <span className="w-fit rounded-full border border-line bg-raised px-3 py-1.5 text-xs tabular-nums text-ink-soft">{items.length} transfer{items.length === 1 ? '' : 's'}</span>
+          )}
+        </div>
       </div>
 
       {connectionInterrupted && (
@@ -174,7 +220,12 @@ export function SharingWorkspace({
 
       <section className="mt-6 overflow-hidden rounded-2xl border border-line-strong bg-raised shadow-[var(--shadow-raised)]">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3 sm:px-5">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {onRenameDevice && (
+              <button type="button" onClick={() => setEditingName((value) => !value)} className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-ink-soft transition hover:border-line-strong hover:text-ink">
+                <FiEdit2 size={13} /> Rename
+              </button>
+            )}
             <span
               className={`h-2 w-2 rounded-full ${
                 connectionInterrupted ? 'bg-danger' : paired ? 'bg-ok' : 'bg-warn'
@@ -214,6 +265,17 @@ export function SharingWorkspace({
           </div>
         </div>
 
+        {editingName && (
+          <form onSubmit={saveDeviceName} className="flex flex-col gap-2 border-b border-line bg-accent-soft/40 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
+            <label htmlFor="device-name" className="shrink-0 text-xs font-semibold text-ink-soft">This device name</label>
+            <input id="device-name" value={deviceName} onChange={(event) => setDeviceName(event.target.value)} maxLength={48} autoFocus className="min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink" />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { setEditingName(false); setDeviceName(localDevice?.name || '') }} className="flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-ink-soft sm:flex-none">Cancel</button>
+              <button type="submit" disabled={savingName || deviceName.trim().length < 2} className="flex-1 rounded-lg bg-accent px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 sm:flex-none">{savingName ? 'Saving...' : 'Save name'}</button>
+            </div>
+          </form>
+        )}
+
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-4 py-4 sm:gap-6 sm:px-6 sm:py-5">
           <DeviceIdentity device={localDevice} label="This device" connected />
 
@@ -240,6 +302,7 @@ export function SharingWorkspace({
             onSendText={onSendText}
             onSendLink={onSendLink}
             onSendFile={onSendFile}
+            onRemoveItem={onRemoveItem}
           />
         </section>
 
@@ -272,7 +335,7 @@ export function SharingWorkspace({
           </header>
 
           <div className="min-h-[330px] bg-raised/60 p-3 sm:p-4 lg:max-h-[620px] lg:overflow-y-auto">
-            <SharedItemsList items={items} />
+            <SharedItemsList items={items} onRetryItem={onRetryItem} onRemoveItem={onRemoveItem} />
           </div>
         </section>
       </div>

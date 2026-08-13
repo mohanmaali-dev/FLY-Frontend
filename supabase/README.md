@@ -1,6 +1,8 @@
 # Supabase setup
 
-FLY runs entirely on Supabase — there is no server to deploy.
+FLY uses Supabase for data, Realtime and Storage. Two small Vercel functions add
+production rate limiting and privacy-safe telemetry; local development works
+without them.
 
 ## What the app does
 
@@ -41,6 +43,7 @@ is idempotent, so re-running after an edit is safe.
 | `public.pairing_sessions` | the in-memory `Map` in the old `pairing.service.js` |
 | `create_` / `get_` / `touch_` / `end_pairing_session()` | the `/api/pairing` routes |
 | `is_live_pairing_session()` | upload authorisation the old endpoint never had |
+| `pairing_rate_limits` + `check_pairing_rate_limit()` | atomic server-side gateway limits |
 | buckets `pairing-files`, `note-images` | `multer` + the `uploads/` directory |
 
 ## 3. Turn OFF email confirmation
@@ -83,6 +86,48 @@ npm run dev
 Open the **Network** URL rather than `localhost` — a QR code pointing at
 `localhost` resolves to the phone itself.
 
+## 6. Enable production safeguards
+
+On Vercel, configure these server-only environment variables:
+
+```text
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SECRET_KEY=sb_secret_your-server-only-key
+RATE_LIMIT_SALT=a-long-random-secret
+```
+
+Set these browser build variables:
+
+```text
+VITE_USE_PAIRING_GATEWAY=true
+VITE_TELEMETRY_ENDPOINT=/api/telemetry
+```
+
+The older `SUPABASE_SERVICE_ROLE_KEY` is supported as a fallback, but new
+projects should use `SUPABASE_SECRET_KEY`. `api/pairing.js` then protects session creation and join-code attempts with an
+IP-derived, salted key. `api/telemetry.js` writes content-free structured events
+to Vercel function logs. Never prefix the service-role key with `VITE_`.
+
+After the gateway is deployed and tested, run
+[`production-hardening.sql`](./production-hardening.sql) in the SQL Editor. It
+revokes direct browser access to the two protected RPCs, preventing someone from
+bypassing the gateway. Run `npm run verify:supabase` before this final revoke;
+the verification script intentionally exercises the anonymous development path.
+
+## 7. Deploy expired-file cleanup
+
+Deploy the included Edge Function:
+
+```bash
+supabase functions deploy cleanup-expired-files
+```
+
+Schedule a POST invocation every 15 minutes and send
+`Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>`. The function lists expired
+sessions, removes their files through the Storage API, and then removes their
+session rows. The SQL cleanup function intentionally preserves expired rows
+which still own files so Storage objects never become untraceable.
+
 ---
 
 ## How pairing works
@@ -105,9 +150,11 @@ relay used.
 
 ## Things to know
 
-- **File deletion is best-effort.** Disconnect clears the bucket, but a user who
-  simply closes the tab leaves files behind until you clean them up. Sessions
-  expire after 10 minutes of no devices; their files do not disappear with them.
+- **Pairing files are private.** The app shares one-hour signed download links,
+  not permanent public URLs. Re-run `schema.sql` if your project was created
+  before this change so the existing bucket is changed to private.
+- **Abandoned files are handled by the included cleanup function.** End session
+  removes files immediately; the scheduled function handles closed tabs.
 - **`sender` is client-supplied.** The old Express relay stamped it server-side;
   with Broadcast the sending client sets it, so a determined client could claim
   any name. Fine for pairing your own devices.
@@ -115,8 +162,9 @@ relay used.
   through your laptop with no outside connection; every message now round-trips
   through Supabase.
 - **Free tier caps files at 50 MB**, exactly the app's own limit.
-- **Expired sessions** are cleaned by `cleanup_expired_pairing_sessions()`. Call
-  it manually, or schedule it if `pg_cron` is enabled:
+- **Empty expired sessions and rate-limit rows** are cleaned by
+  `cleanup_expired_pairing_sessions()`. It can be scheduled alongside the Edge
+  Function:
 
   ```sql
   select cron.schedule('fly-cleanup', '*/15 * * * *',

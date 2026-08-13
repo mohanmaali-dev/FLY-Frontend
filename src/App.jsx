@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 
 import AuthLayout from './components/AuthLayout.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
@@ -12,6 +12,32 @@ const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage.jsx'
 const PairingPage = lazy(() => import('./pages/PairingPage.jsx'))
 const JoinPairingPage = lazy(() => import('./pages/JoinPairingPage.jsx'))
 const NotesPage = lazy(() => import('./pages/NotesPage.jsx'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage.jsx'))
+
+function RouteMetadata() {
+  const { pathname } = useLocation()
+
+  const home = pathname === '/'
+  const title = home
+    ? 'FLY — Cross-device sharing'
+    : pathname.startsWith('/pair/')
+      ? 'Join a sharing session — FLY'
+      : pathname === '/notes'
+        ? 'My notes — FLY'
+        : pathname === '/login'
+          ? 'Log in — FLY'
+          : pathname === '/register'
+            ? 'Create an account — FLY'
+            : 'FLY'
+
+  useEffect(() => {
+    document.title = title
+    const robots = document.querySelector('meta[name="robots"]')
+    robots?.setAttribute('content', home ? 'index, follow' : 'noindex, nofollow')
+  }, [home, title])
+
+  return null
+}
 
 function PageFallback() {
   return (
@@ -27,6 +53,7 @@ function PageFallback() {
 function App() {
   return (
     <BrowserRouter>
+      <RouteMetadata />
       <AuthProvider>
         <Suspense fallback={<PageFallback />}>
           <Routes>
@@ -44,7 +71,7 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/notes" element={<NotesPage />} />
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
       </AuthProvider>

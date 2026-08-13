@@ -349,6 +349,70 @@ $$;
 
 grant execute on function public.is_live_pairing_session(text) to anon, authenticated;
 
+-- ---------------------------------------------------------------------------
+-- Production gateway rate limits
+--
+-- Only the server-side Vercel function may call this. The browser never sees
+-- the service-role key and cannot reset or bypass the atomic attempt counter.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.pairing_rate_limits (
+  request_key  text not null,
+  action       text not null check (action in ('create', 'resolve')),
+  window_start timestamptz not null default now(),
+  attempts     integer not null default 1,
+  primary key (request_key, action)
+);
+
+alter table public.pairing_rate_limits enable row level security;
+
+create or replace function public.check_pairing_rate_limit(
+  p_request_key text,
+  p_request_action text,
+  p_max_attempts integer,
+  p_window_seconds integer
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  allowed boolean;
+begin
+  if length(p_request_key) <> 64
+     or p_request_action not in ('create', 'resolve')
+     or p_max_attempts < 1
+     or p_window_seconds < 1 then
+    return false;
+  end if;
+
+  insert into public.pairing_rate_limits as limits (
+    request_key, action, window_start, attempts
+  ) values (
+    p_request_key, p_request_action, now(), 1
+  )
+  on conflict (request_key, action) do update
+  set attempts = case
+        when limits.window_start <= now() - make_interval(secs => p_window_seconds)
+          then 1
+        else limits.attempts + 1
+      end,
+      window_start = case
+        when limits.window_start <= now() - make_interval(secs => p_window_seconds)
+          then now()
+        else limits.window_start
+      end
+  returning limits.attempts <= p_max_attempts into allowed;
+
+  return allowed;
+end;
+$$;
+
+revoke all on function public.check_pairing_rate_limit(text, text, integer, integer) from public;
+revoke all on function public.check_pairing_rate_limit(text, text, integer, integer) from anon, authenticated;
+grant execute on function public.check_pairing_rate_limit(text, text, integer, integer) to service_role;
+
 -- Housekeeping. Call manually, or schedule with pg_cron:
 --   select cron.schedule('fly-cleanup', '*/15 * * * *',
 --                        $$select public.cleanup_expired_pairing_sessions()$$);
@@ -361,8 +425,21 @@ as $$
 declare
   removed integer;
 begin
-  delete from public.pairing_sessions where expires_at < now() - interval '1 hour';
+  -- Storage objects must be deleted through the Storage API, not raw SQL.
+  -- Preserve expired session rows which still own files so the scheduled Edge
+  -- Function can identify and remove their objects safely.
+  delete from public.pairing_sessions s
+  where s.expires_at < now() - interval '1 hour'
+    and not exists (
+      select 1 from storage.objects o
+      where o.bucket_id = 'pairing-files'
+        and (storage.foldername(o.name))[1] = s.id::text
+    );
   get diagnostics removed = row_count;
+
+  delete from public.pairing_rate_limits
+  where window_start < now() - interval '1 day';
+
   return removed;
 end;
 $$;
@@ -372,8 +449,8 @@ $$;
 -- ---------------------------------------------------------------------------
 
 insert into storage.buckets (id, name, public)
-values ('pairing-files', 'pairing-files', true)
-on conflict (id) do update set public = true;
+values ('pairing-files', 'pairing-files', false)
+on conflict (id) do update set public = false;
 
 insert into storage.buckets (id, name, public)
 values ('note-images', 'note-images', true)
@@ -392,10 +469,14 @@ create policy "upload into a live pairing session"
   );
 
 drop policy if exists "pairing files are publicly readable" on storage.objects;
-create policy "pairing files are publicly readable"
+drop policy if exists "read files of a live pairing session" on storage.objects;
+create policy "read files of a live pairing session"
   on storage.objects for select
   to anon, authenticated
-  using (bucket_id = 'pairing-files');
+  using (
+    bucket_id = 'pairing-files'
+    and public.is_live_pairing_session((storage.foldername(name))[1])
+  );
 
 -- Disconnecting wipes the session's files. Scoped the same way as upload, so
 -- you can only clear a folder belonging to a session whose id you hold.

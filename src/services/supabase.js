@@ -5,6 +5,11 @@ import { toUserError } from '../utils/errors.js'
 const url = import.meta.env.VITE_SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+// Storage's standard upload helper does not expose browser upload progress.
+// These public client credentials are also used by the XHR uploader; the anon
+// key is safe to ship and remains constrained by Row Level Security.
+export const supabaseConfig = { url, anonKey }
+
 /**
  * False until both variables are set. main.jsx renders setup instructions
  * rather than mounting the app, so no service ever sees a null client.

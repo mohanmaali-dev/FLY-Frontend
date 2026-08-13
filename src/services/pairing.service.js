@@ -13,6 +13,19 @@ const mapSession = (row) => ({
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+const usePairingGateway = import.meta.env.VITE_USE_PAIRING_GATEWAY === 'true'
+
+const gatewayRequest = async (body) => {
+  const response = await fetch('/api/pairing', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw userError(result.message || 'The pairing service is unavailable.')
+  return result.data
+}
+
 /** Strips separators and normalises case: "k7m-3qx" and "K7M3QX" are the same. */
 export const normaliseCode = (value = '') =>
   value.replace(/[^0-9a-z]/gi, '').toUpperCase().slice(0, 6)
@@ -31,9 +44,9 @@ export const isSessionCode = (value = '') => normaliseCode(value).length === 6
  * to return the new row.
  */
 export const createPairingSession = async () => {
-  const rows = unwrap(await supabase.rpc('create_pairing_session'))
-
-  const row = rows?.[0]
+  const row = usePairingGateway
+    ? await gatewayRequest({ action: 'create' })
+    : unwrap(await supabase.rpc('create_pairing_session'))?.[0]
 
   if (!row) {
     throw userError('Could not start a session. Please try again.')
@@ -62,13 +75,14 @@ export const getPairingSession = async (sessionId) => {
 }
 
 export const getPairingSessionByCode = async (code) => {
-  const rows = unwrap(
-    await supabase.rpc('get_pairing_session_by_code', {
-      session_code: normaliseCode(code),
-    }),
-  )
-
-  const row = rows?.[0]
+  const normalized = normaliseCode(code)
+  const row = usePairingGateway
+    ? await gatewayRequest({ action: 'resolve', code: normalized })
+    : unwrap(
+        await supabase.rpc('get_pairing_session_by_code', {
+          session_code: normalized,
+        }),
+      )?.[0]
 
   if (!row) {
     throw userError('That code is not valid. Check it and try again.')

@@ -1,10 +1,19 @@
 import { supabase } from './supabase.js'
 import { toUserMessage, userError } from '../utils/errors.js'
 import { touchPairingSession } from './pairing.service.js'
+import {
+  createSlidingWindowLimiter,
+  MAX_LINK_LENGTH,
+  MAX_LINK_NOTE_LENGTH,
+  MAX_TEXT_LENGTH,
+} from '../utils/transfer.js'
+import { selectSessionDevices } from '../utils/session-admission.js'
 
 const MESSAGE_EVENT = 'device:message'
 const ENDED_EVENT = 'pairing:ended'
 const CLEARED_EVENT = 'pairing:cleared'
+const DELIVERED_EVENT = 'device:delivered'
+const REMOVED_EVENT = 'device:removed'
 
 const channelName = (sessionId) => `pairing:${sessionId}`
 
@@ -35,9 +44,18 @@ export const joinPairingChannel = ({
   onMessage,
   onEnded,
   onCleared,
+  onDelivery,
+  onRemoved,
+  onFull,
   onError,
   onStatus,
 }) => {
+  let currentDevice = device
+  let intentionallyClosed = false
+  let keepAliveTimer = null
+  let admitted = true
+  let admittedIds = new Set([device.id])
+  const canSend = createSlidingWindowLimiter()
   const channel = supabase.channel(channelName(sessionId), {
     config: {
       presence: { key: device.id },
@@ -47,11 +65,16 @@ export const joinPairingChannel = ({
   })
 
   channel.on('presence', { event: 'sync' }, () => {
-    const devices = Object.values(channel.presenceState())
+    const allDevices = Object.values(channel.presenceState())
       .map((entries) => entries[0]?.device)
       .filter(Boolean)
 
+    const devices = selectSessionDevices(allDevices)
+    admittedIds = new Set(devices.map((entry) => entry.id))
+    admitted = admittedIds.has(currentDevice.id)
+
     onDevices?.(devices)
+    if (!admitted) onFull?.(devices)
 
     // Keeps `status` accurate and pushes out expiry while devices are attached,
     // so an active pairing is never expired out from under its devices.
@@ -61,23 +84,49 @@ export const joinPairingChannel = ({
   })
 
   channel.on('broadcast', { event: MESSAGE_EVENT }, ({ payload }) => {
-    if (payload) onMessage?.(payload)
+    if (!payload) return
+    if (!admitted || (payload.senderId && !admittedIds.has(payload.senderId))) return
+    onMessage?.(payload)
+    channel.send({
+      type: 'broadcast',
+      event: DELIVERED_EVENT,
+      payload: { id: payload.id, receiverId: currentDevice.id },
+    }).catch(() => {})
+  })
+
+  channel.on('broadcast', { event: DELIVERED_EVENT }, ({ payload }) => {
+    if (payload?.id && (!payload.receiverId || admittedIds.has(payload.receiverId))) {
+      onDelivery?.(payload.id)
+    }
+  })
+
+  channel.on('broadcast', { event: REMOVED_EVENT }, ({ payload }) => {
+    if (payload?.id && (!payload.senderId || admittedIds.has(payload.senderId))) {
+      onRemoved?.(payload.id)
+    }
   })
 
   // Either side can end the session. Without this the other device keeps a
   // history full of links to files that have just been deleted.
   channel.on('broadcast', { event: ENDED_EVENT }, ({ payload }) => {
-    onEnded?.(payload?.by || 'The other device')
+    if (!payload?.senderId || admittedIds.has(payload.senderId)) {
+      onEnded?.(payload?.by || 'The other device')
+    }
   })
 
-  channel.on('broadcast', { event: CLEARED_EVENT }, () => {
-    onCleared?.()
+  channel.on('broadcast', { event: CLEARED_EVENT }, ({ payload }) => {
+    if (!payload?.senderId || admittedIds.has(payload.senderId)) onCleared?.()
   })
 
   channel.subscribe((status, error) => {
     if (status === 'SUBSCRIBED') {
       onStatus?.('connected')
-      channel.track({ device })
+      channel.track({ device: currentDevice })
+      clearInterval(keepAliveTimer)
+      keepAliveTimer = setInterval(() => {
+        const count = Object.values(channel.presenceState()).length || 1
+        touchPairingSession(sessionId, count).catch(() => {})
+      }, 4 * 60 * 1000)
       return
     }
 
@@ -88,9 +137,14 @@ export const joinPairingChannel = ({
     }
 
     if (status === 'TIMED_OUT') {
-      onStatus?.('offline')
+      onStatus?.(navigator.onLine ? 'reconnecting' : 'offline')
       onError?.('Connection timed out. Check your network and reload.')
       return
+    }
+
+    if (status === 'CLOSED' && !intentionallyClosed) {
+      onStatus?.('disconnected')
+      onError?.('Connection closed. Trying to reconnect.')
     }
 
   })
@@ -99,10 +153,27 @@ export const joinPairingChannel = ({
     channel,
 
     send: async (payloadData) => {
+      if (!admitted) throw userError('This session already has two connected devices.')
+      if (!canSend()) {
+        throw userError('You are sending too quickly. Wait a moment and try again.')
+      }
+
       const payload =
         typeof payloadData === 'string'
           ? { itemType: 'text', text: payloadData }
           : payloadData
+
+      if (payload.itemType === 'text' && String(payload.text || '').length > MAX_TEXT_LENGTH) {
+        throw userError(`Text is limited to ${MAX_TEXT_LENGTH.toLocaleString()} characters.`)
+      }
+      if (payload.itemType === 'link') {
+        if (String(payload.url || '').length > MAX_LINK_LENGTH) {
+          throw userError('That link is too long.')
+        }
+        if (String(payload.text || '').length > MAX_LINK_NOTE_LENGTH) {
+          throw userError('That link note is too long.')
+        }
+      }
 
       const message = {
         id: payload.id || randomId(),
@@ -113,7 +184,9 @@ export const joinPairingChannel = ({
         fileUrl: payload.fileUrl || '',
         fileSize: payload.fileSize || 0,
         mimeType: payload.mimeType || '',
-        sender: device.name,
+        storagePath: payload.storagePath || '',
+        sender: currentDevice.name,
+        senderId: currentDevice.id,
         timestamp: payload.timestamp || new Date().toISOString(),
       }
 
@@ -136,7 +209,7 @@ export const joinPairingChannel = ({
         await channel.send({
           type: 'broadcast',
           event: ENDED_EVENT,
-          payload: { by: device.name },
+          payload: { by: currentDevice.name, senderId: currentDevice.id },
         })
       } catch {
         /* the other side falls back to noticing the presence drop */
@@ -147,7 +220,7 @@ export const joinPairingChannel = ({
       const result = await channel.send({
         type: 'broadcast',
         event: CLEARED_EVENT,
-        payload: { by: device.name },
+        payload: { by: currentDevice.name, senderId: currentDevice.id },
       })
 
       if (result !== 'ok') {
@@ -155,7 +228,26 @@ export const joinPairingChannel = ({
       }
     },
 
+    removeItem: async (id) => {
+      const result = await channel.send({
+        type: 'broadcast',
+        event: REMOVED_EVENT,
+        payload: { id, by: currentDevice.name, senderId: currentDevice.id },
+      })
+
+      if (result !== 'ok') {
+        throw userError('Could not remove the item on the other device.')
+      }
+    },
+
+    updateDevice: async (nextDevice) => {
+      currentDevice = nextDevice
+      await channel.track({ device: nextDevice })
+    },
+
     close: async () => {
+      intentionallyClosed = true
+      clearInterval(keepAliveTimer)
       try {
         await channel.untrack()
       } catch {

@@ -121,6 +121,8 @@ export function ToastProvider({ children }) {
 
       <div
         aria-label="Notifications"
+        aria-live="polite"
+        aria-relevant="additions"
         className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex flex-col items-center gap-2 p-4 sm:inset-x-auto sm:right-0 sm:items-end sm:p-6"
       >
         <div className="flex w-full max-w-sm flex-col gap-2">
