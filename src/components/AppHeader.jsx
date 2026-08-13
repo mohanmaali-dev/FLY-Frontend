@@ -10,14 +10,16 @@ import { LogoMark } from './Logo.jsx'
  * left the user on a page with no navigation at all — the logo is the way back
  * to a fresh pairing code.
  */
-export function AppHeader({ children }) {
+export function AppHeader({ children, homeTo = '/', preserveSession = false }) {
   return (
     <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5 sm:pt-4">
       <div className="mx-auto flex max-w-[1380px] items-center justify-between gap-3 rounded-2xl border border-line-strong bg-surface/92 px-3 py-2.5 shadow-[var(--shadow-raised)] backdrop-blur-xl sm:px-4">
         <Link
-          to="/"
-          state={{ showPairView: true }}
-          aria-label="FLY home"
+          to={homeTo}
+          state={preserveSession ? undefined : { showPairView: true }}
+          aria-label={preserveSession ? 'FLY — active sharing session' : 'FLY home'}
+          aria-current={preserveSession ? 'page' : undefined}
+          title={preserveSession ? 'Sharing session active' : 'FLY home'}
           className="group flex items-center gap-3 rounded-xl"
         >
           <LogoMark
