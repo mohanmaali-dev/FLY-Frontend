@@ -620,7 +620,7 @@ const JoinPairingPage = () => {
       </main>
 
       {/* Compact: a live session on a phone does not need the brand blurb. */}
-      <Footer compact />
+      <Footer />
 
       <ConfirmDialog
         open={confirmingDisconnect}

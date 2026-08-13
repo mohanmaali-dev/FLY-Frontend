@@ -35,7 +35,7 @@ const FIELD =
   'w-full rounded-xl border border-line-strong bg-sunken px-4 py-3 text-base text-ink placeholder-ink-mute shadow-[inset_0_2px_4px_rgba(18,20,29,0.06)] transition hover:border-ink-mute focus:bg-surface disabled:cursor-not-allowed disabled:border-line disabled:bg-raised disabled:text-ink-mute disabled:shadow-none sm:text-sm'
 
 const SUBMIT =
-  'flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.97] hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-mute disabled:shadow-none disabled:active:scale-100 sm:w-auto sm:py-2.5'
+  'flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.97] hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-mute disabled:shadow-none disabled:active:scale-100 sm:w-auto sm:py-2.5'
 
 const formatFileSize = (bytes) => {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -291,7 +291,7 @@ export function ShareControls({
                 id={`share-tab-${tab.id}`}
                 tabIndex={active ? 0 : -1}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition sm:py-1.5 ${active ? 'bg-surface text-ink shadow-[var(--shadow-card)]' : 'text-ink-soft hover:text-ink'}`}
+                className={`flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition sm:min-h-0 sm:py-1.5 ${active ? 'bg-surface text-ink shadow-[var(--shadow-card)]' : 'text-ink-soft hover:text-ink'}`}
               >
                 <Icon size={15} aria-hidden="true" />
                 <span>{tab.label}</span>

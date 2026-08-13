@@ -84,17 +84,6 @@
   --animate-rise: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
   --animate-flow: flow 2.4s linear infinite;
 
-  /* Aliases so the auth pages and Notes inherit the theme untouched */
-  --color-brand: var(--color-accent);
-  --color-brand-dark: var(--color-accent-hover);
-  --color-brand-soft: var(--color-accent-soft);
-  --color-brand-ring: var(--color-accent-line);
-  --color-line-soft: var(--color-line);
-  --color-card: var(--color-surface);
-  --color-primary: var(--color-accent);
-  --color-primary-dark: var(--color-accent-hover);
-  --color-primary-light: var(--color-accent-soft);
-  --color-cream: var(--color-surface);
 }
 
 /* ============================================================================

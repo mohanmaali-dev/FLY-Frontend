@@ -16,6 +16,7 @@ export function AppHeader({ children }) {
       <div className="mx-auto flex max-w-[1380px] items-center justify-between gap-3 rounded-2xl border border-line-strong bg-surface/92 px-3 py-2.5 shadow-[var(--shadow-raised)] backdrop-blur-xl sm:px-4">
         <Link
           to="/"
+          state={{ showPairView: true }}
           aria-label="FLY home"
           className="group flex items-center gap-3 rounded-xl"
         >
@@ -33,7 +34,27 @@ export function AppHeader({ children }) {
           </span>
         </Link>
 
-        {children && <div className="flex items-center gap-2">{children}</div>}
+        {children ? (
+          <div className="flex items-center gap-2">{children}</div>
+        ) : (
+          <nav aria-label="Main navigation" className="flex items-center gap-1 rounded-xl border border-line bg-raised/75 p-1 shadow-[var(--shadow-card)]">
+            <Link
+              to="/#how-it-works"
+              state={{ showPairView: true }}
+              className="hidden rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-surface hover:text-ink hover:shadow-[var(--shadow-card)] sm:block"
+            >
+              How it works
+            </Link>
+            <Link
+              to="/#join-session"
+              state={{ showPairView: true }}
+              className="rounded-lg bg-accent-strong px-3.5 py-2 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.98] hover:bg-accent-hover sm:px-4"
+            >
+              <span className="sm:hidden">Enter code</span>
+              <span className="hidden sm:inline">Join with code</span>
+            </Link>
+          </nav>
+        )}
       </div>
     </header>
   )

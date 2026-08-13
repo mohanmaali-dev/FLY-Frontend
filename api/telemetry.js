@@ -2,6 +2,7 @@ const EVENTS = new Set([
   'app_error',
   'pairing_connected',
   'pairing_failed',
+  'page_performance',
   'reconnect_failed',
   'transfer_failed',
   'upload_failed',
@@ -20,6 +21,7 @@ export default function handler(request, response) {
   // deliberately excludes message contents, URLs, file names and session IDs.
   console.info(JSON.stringify({
     kind: 'fly_client_event',
+    requestId: String(request.headers['x-vercel-id'] || '').slice(0, 100),
     name: body.name,
     route: String(body.route || '').slice(0, 80),
     properties: body.properties || {},

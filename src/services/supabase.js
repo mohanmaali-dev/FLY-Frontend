@@ -19,11 +19,9 @@ export const isSupabaseConfigured = Boolean(url && anonKey)
 export const supabase = isSupabaseConfigured
   ? createClient(url, anonKey, {
       auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        // Email confirmation and password-recovery links come back with
-        // tokens in the URL fragment; this exchanges them for a session.
-        detectSessionInUrl: true,
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
       },
       realtime: {
         // Pairing is chatty only in bursts; 10/sec is plenty and keeps us

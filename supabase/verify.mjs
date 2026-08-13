@@ -268,15 +268,7 @@ async function main() {
     badUpload.error ? `blocked: ${badUpload.error.message}` : 'ALLOWED — policy is not working',
   )
 
-  // ── 5. Notes stay private when signed out ─────────────────────────────────
-  const notes = await host.from('notes').select('id')
-  check(
-    'notes unreadable when signed out',
-    (notes.data?.length ?? 0) === 0,
-    notes.error ? `blocked: ${notes.error.code}` : `${notes.data?.length ?? 0} rows returned`,
-  )
-
-  // ── 6. Disconnect wipes the session's files, then ends the session ────────
+  // ── 5. Disconnect wipes the session's files, then ends the session ────────
   const listBefore = await host.storage.from('pairing-files').list(session.id)
   check('session folder has the uploaded file', (listBefore.data?.length ?? 0) > 0,
     `${listBefore.data?.length ?? 0} file(s)`)

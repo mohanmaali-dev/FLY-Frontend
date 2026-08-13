@@ -28,8 +28,8 @@ function SupabaseSetupNotice() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-cream px-6 py-12 text-ink">
-      <section className="w-full max-w-xl rounded-3xl border border-primary/15 bg-white p-8 shadow-xl shadow-primary/10">
+    <main className="grid min-h-screen place-items-center bg-raised px-6 py-12 text-ink">
+      <section className="w-full max-w-xl rounded-3xl border border-line-strong bg-surface p-8 shadow-[var(--shadow-raised)]">
         <div className="grid size-14 place-items-center rounded-2xl bg-warn-soft text-warn">
           <FiSettings size={24} />
         </div>
@@ -56,7 +56,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key`}
               href="https://supabase.com/dashboard"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-semibold text-primary-dark hover:underline"
+              className="font-semibold text-accent-hover hover:underline"
             >
               supabase.com/dashboard
             </a>

@@ -4,6 +4,7 @@ const ALLOWED_EVENTS = new Set([
   'app_error',
   'pairing_connected',
   'pairing_failed',
+  'page_performance',
   'reconnect_failed',
   'transfer_failed',
   'upload_failed',
@@ -12,7 +13,6 @@ const ALLOWED_EVENTS = new Set([
 const routeGroup = () => {
   const path = window.location.pathname
   if (path.startsWith('/pair/')) return '/pair/:id'
-  if (path.startsWith('/reset-password')) return '/reset-password'
   return path.slice(0, 80)
 }
 
@@ -63,8 +63,27 @@ export const installGlobalMonitoring = () => {
   window.addEventListener('error', onError)
   window.addEventListener('unhandledrejection', onRejection)
 
+  const reportPerformance = () => {
+    const navigation = performance.getEntriesByType?.('navigation')?.[0]
+    if (!navigation) return
+
+    recordEvent('page_performance', {
+      loadMs: Math.round(navigation.loadEventEnd || performance.now()),
+      domReadyMs: Math.round(navigation.domContentLoadedEventEnd || 0),
+      navigationType: navigation.type || 'navigate',
+      online: navigator.onLine,
+    })
+  }
+
+  if (document.readyState === 'complete') {
+    setTimeout(reportPerformance, 0)
+  } else {
+    window.addEventListener('load', reportPerformance, { once: true })
+  }
+
   return () => {
     window.removeEventListener('error', onError)
     window.removeEventListener('unhandledrejection', onRejection)
+    window.removeEventListener('load', reportPerformance)
   }
 }

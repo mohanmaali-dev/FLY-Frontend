@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
 import {
   FiArrowRight,
@@ -9,7 +9,6 @@ import {
   FiFileText,
   FiKey,
   FiLink,
-  FiLogOut,
   FiMonitor,
   FiShield,
   FiShare2,
@@ -17,7 +16,6 @@ import {
   FiTablet,
 } from 'react-icons/fi'
 
-import { useAuth } from '../context/AuthContext.jsx'
 import { useDevice } from '../context/DeviceContext.jsx'
 import {
   createPairingSession,
@@ -31,12 +29,13 @@ import AppHeader from '../components/AppHeader.jsx'
 import ConfirmDialog from '../components/ConfirmDialog.jsx'
 import Footer from '../components/Footer.jsx'
 import SharingWorkspace from '../components/SharingWorkspace.jsx'
+import { useToast } from '../components/Toast.jsx'
 import { copyText } from '../utils/browser.js'
 
 const CAPABILITIES = [
   { icon: FiFileText, label: 'Text & notes', mobileLabel: 'Text' },
   { icon: FiLink, label: 'Links', mobileLabel: 'Links' },
-  { icon: FiFile, label: 'Files up to 50 MB', mobileLabel: 'Files' },
+  { icon: FiFile, label: 'Photos & files', mobileLabel: 'Files' },
 ]
 
 // Matches the device types used by the live sharing workspace.
@@ -74,8 +73,9 @@ const STEPS = [
 ]
 
 function PairingPage() {
-  const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const { toast } = useToast()
   const {
     connectionError,
     connectionStatus,
@@ -126,6 +126,24 @@ function PairingPage() {
   useEffect(() => {
     if (paired) setShowPairView(false)
   }, [paired])
+
+  // The live sharing workspace and the pairing homepage both use `/`. Clicking
+  // the navbar logo passes this state so it can still return to the QR view
+  // without ending the active session.
+  useEffect(() => {
+    if (location.state?.showPairView) setShowPairView(true)
+  }, [location.key, location.state?.showPairView])
+
+  useEffect(() => {
+    if (!location.hash) return
+
+    setShowPairView(true)
+    const timer = setTimeout(() => {
+      document.querySelector(location.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 50)
+
+    return () => clearTimeout(timer)
+  }, [location.hash])
 
   // Initialize or fetch pairing session automatically
   useEffect(() => {
@@ -330,6 +348,22 @@ function PairingPage() {
     setTimeout(() => setCopiedLink(false), 2000)
   }
 
+  const sharePairingLink = async () => {
+    if (!pairingUrl || typeof navigator.share !== 'function') return
+
+    try {
+      await navigator.share({
+        title: 'Connect with FLY',
+        text: 'Open this link to connect our devices with FLY.',
+        url: pairingUrl,
+      })
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        toast({ tone: 'warning', title: 'Could not open sharing', description: 'Copy the connection link instead.' })
+      }
+    }
+  }
+
   // A QR pointing at localhost resolves to the phone itself, not this machine.
   const isLocalhostOrigin = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(
     window.location.hostname,
@@ -341,44 +375,7 @@ function PairingPage() {
     <div className="flex min-h-screen flex-col bg-surface text-ink">
       {/* Deliberately quiet: on the unpaired screen nothing should compete
           with the code for attention. */}
-      <AppHeader>
-        <nav className="flex items-center gap-1 rounded-xl border border-line bg-raised/75 p-1 shadow-[var(--shadow-card)]">
-          {user ? (
-            <>
-              <Link
-                to="/notes"
-                className="rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-surface hover:text-ink hover:shadow-[var(--shadow-card)]"
-              >
-                Notes
-              </Link>
-              <button
-                type="button"
-                onClick={logout}
-                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-surface hover:text-ink hover:shadow-[var(--shadow-card)]"
-                title={user.name}
-              >
-                <FiLogOut size={15} />
-                <span className="hidden sm:inline">Log out</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <Link
-                to="/login"
-                className="rounded-lg px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-surface hover:text-ink hover:shadow-[var(--shadow-card)]"
-              >
-                Log in
-              </Link>
-              <Link
-                to="/register"
-                className="rounded-lg bg-accent-strong px-4 py-2 text-sm font-medium text-white shadow-[var(--shadow-button)] transition active:scale-[0.98] hover:bg-accent-hover"
-              >
-                Sign up
-              </Link>
-            </>
-          )}
-        </nav>
-      </AppHeader>
+      <AppHeader />
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-20 sm:px-6 sm:pb-24">
         {onPairView ? (
@@ -502,6 +499,17 @@ function PairingPage() {
                             {copiedLink ? 'Copied' : 'Copy URL'}
                           </span>
                         </button>
+                        {typeof navigator.share === 'function' && (
+                          <button
+                            type="button"
+                            onClick={sharePairingLink}
+                            aria-label="Share connection link"
+                            className="flex h-8 w-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-accent-line bg-accent-soft text-xs font-medium text-accent-hover transition active:scale-[0.97] hover:border-accent sm:h-auto sm:w-auto sm:px-3 sm:py-2"
+                          >
+                            <FiShare2 size={13} />
+                            <span className="hidden sm:inline">Share</span>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -526,9 +534,9 @@ function PairingPage() {
                     </ul>
                     <p className="mt-3 flex items-center justify-center gap-2 text-[0.68rem] text-ink-mute sm:mt-4 sm:text-xs lg:justify-start">
                       <FiShield size={13} className="shrink-0" aria-hidden="true" />
-                      <span className="sm:hidden">Clears when you disconnect.</span>
+                      <span className="sm:hidden">Private by design.</span>
                       <span className="hidden sm:inline">
-                        No account required. Everything clears when you disconnect.
+                        Private by design. No account required.
                       </span>
                     </p>
                   </div>
@@ -634,7 +642,7 @@ function PairingPage() {
             )}
 
             {/* A compact alternative for devices without a camera. */}
-            <div className="mx-auto mt-12 max-w-5xl sm:mt-16">
+            <div id="join-session" className="mx-auto mt-12 max-w-5xl scroll-mt-28 sm:mt-16">
               <div className="flex items-center gap-4">
                 <span className="h-px flex-1 bg-line" />
                 <span className="font-mono text-[0.7rem] font-medium uppercase tracking-[0.14em] text-ink-mute">
@@ -708,16 +716,16 @@ function PairingPage() {
               </div>
             </div>
 
-            <div className="mt-16 sm:mt-20">
+            <div id="how-it-works" className="mt-16 scroll-mt-28 sm:mt-20">
               <div className="mx-auto max-w-xl text-center">
                 <p className="font-mono text-[0.68rem] font-medium uppercase tracking-[0.15em] text-accent-hover">
                   How it works
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-tight text-ink sm:text-[1.75rem]">
-                  Three steps. Nothing to install.
+                  Three simple steps
                 </h2>
                 <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-                  Connect your devices and start sharing in less than a minute.
+                  Scan, connect and start sharing in moments.
                 </p>
               </div>
 
@@ -791,7 +799,7 @@ function PairingPage() {
 
       {/* Full footer while pairing; trimmed to the legal strip once a session
           is live, where the brand blurb is just noise above the feed. */}
-      <Footer compact={!onPairView} />
+      <Footer />
 
       <ConfirmDialog
         open={confirmingDisconnect}

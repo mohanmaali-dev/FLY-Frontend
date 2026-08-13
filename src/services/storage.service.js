@@ -4,7 +4,6 @@ import { userError } from '../utils/errors.js'
 import { MAX_FILE_BYTES, validateShareFile } from '../utils/transfer.js'
 
 const PAIRING_BUCKET = 'pairing-files'
-const NOTE_BUCKET = 'note-images'
 
 export { MAX_FILE_BYTES }
 
@@ -157,26 +156,4 @@ export const deleteSessionFiles = async (sessionId) => {
   }
 
   return removed
-}
-
-export const uploadNoteImage = async (userId, file) => {
-  if (!file.type.startsWith('image/')) {
-    throw userError('Please choose an image file.')
-  }
-
-  if (file.size > 5 * 1024 * 1024) {
-    throw userError('That image is too large. The limit is 5 MB.')
-  }
-
-  const path = `${userId}/${randomUUID()}-${safeName(file.name)}`
-
-  unwrap(
-    await supabase.storage
-      .from(NOTE_BUCKET)
-      .upload(path, file, { contentType: file.type }),
-  )
-
-  // Note images remain public because notes persist beyond a short pairing
-  // session and are already protected by authenticated write ownership.
-  return supabase.storage.from(NOTE_BUCKET).getPublicUrl(path).data.publicUrl
 }

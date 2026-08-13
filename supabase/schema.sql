@@ -4,120 +4,11 @@
 -- Run this once in the Supabase SQL editor (Dashboard -> SQL Editor -> New
 -- query -> paste -> Run). It is idempotent: re-running it is safe.
 --
--- Replaces the former Node/Express + MongoDB backend:
---   users     -> auth.users + public.profiles
---   notes     -> public.notes
---   pairing   -> public.pairing_sessions (device list lives in Realtime
+-- Pairing backend:
+--   sessions  -> public.pairing_sessions (device list lives in Realtime
 --                Presence, messages in Realtime Broadcast — no table needed)
---   uploads/  -> storage buckets `pairing-files` and `note-images`
+--   files     -> private `pairing-files` Storage bucket
 -- ============================================================================
-
--- ---------------------------------------------------------------------------
--- Shared helpers
--- ---------------------------------------------------------------------------
-
-create or replace function public.set_updated_at()
-returns trigger
-language plpgsql
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
-
--- ---------------------------------------------------------------------------
--- profiles — the non-credential half of the old Mongo user document.
--- auth.users owns email/password/verification; this owns name/role/is_active.
--- ---------------------------------------------------------------------------
-
-create table if not exists public.profiles (
-  id         uuid primary key references auth.users (id) on delete cascade,
-  name       text not null,
-  role       text not null default 'user' check (role in ('user', 'admin')),
-  is_active  boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-alter table public.profiles enable row level security;
-
-drop policy if exists "profiles are readable by their owner" on public.profiles;
-create policy "profiles are readable by their owner"
-  on public.profiles for select
-  to authenticated
-  using (id = (select auth.uid()));
-
-drop policy if exists "profiles are updatable by their owner" on public.profiles;
-create policy "profiles are updatable by their owner"
-  on public.profiles for update
-  to authenticated
-  using (id = (select auth.uid()))
-  with check (id = (select auth.uid()));
-
-drop trigger if exists profiles_set_updated_at on public.profiles;
-create trigger profiles_set_updated_at
-  before update on public.profiles
-  for each row execute function public.set_updated_at();
-
--- A profile row is created automatically for every new signup. `name` comes
--- from the metadata passed to supabase.auth.signUp({ options: { data } }).
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  insert into public.profiles (id, name)
-  values (
-    new.id,
-    coalesce(
-      nullif(trim(new.raw_user_meta_data ->> 'name'), ''),
-      split_part(coalesce(new.email, 'user@local'), '@', 1)
-    )
-  )
-  on conflict (id) do nothing;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
-
--- ---------------------------------------------------------------------------
--- notes
--- ---------------------------------------------------------------------------
-
-create table if not exists public.notes (
-  id         uuid primary key default gen_random_uuid(),
-  user_id    uuid not null references auth.users (id) on delete cascade,
-  title      text not null,
-  content    text not null default '',
-  image      text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists notes_user_id_created_at_idx
-  on public.notes (user_id, created_at desc);
-
-alter table public.notes enable row level security;
-
-drop policy if exists "notes are private to their owner" on public.notes;
-create policy "notes are private to their owner"
-  on public.notes for all
-  to authenticated
-  using (user_id = (select auth.uid()))
-  with check (user_id = (select auth.uid()));
-
-drop trigger if exists notes_set_updated_at on public.notes;
-create trigger notes_set_updated_at
-  before update on public.notes
-  for each row execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- pairing_sessions
@@ -133,7 +24,6 @@ create trigger notes_set_updated_at
 
 create table if not exists public.pairing_sessions (
   id         uuid primary key default gen_random_uuid(),
-  created_by uuid references auth.users (id) on delete set null,
   status     text not null default 'waiting' check (status in ('waiting', 'paired')),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null default now() + interval '10 minutes'
@@ -195,8 +85,7 @@ drop function if exists public.create_pairing_session();
 drop function if exists public.get_pairing_session(uuid);
 drop function if exists public.get_pairing_session_by_code(text);
 
--- The dashboard works signed-out, as it did with the Express backend, so anon
--- may open a session. created_by is recorded when a user happens to be signed in.
+-- FLY has no account requirement, so anonymous visitors may open a session.
 create or replace function public.create_pairing_session()
 returns table (
   id uuid,
@@ -222,8 +111,8 @@ begin
 
     begin
       return query
-      insert into public.pairing_sessions (created_by, code)
-      values (auth.uid(), public.generate_pairing_code())
+      insert into public.pairing_sessions (code)
+      values (public.generate_pairing_code())
       returning
         pairing_sessions.id,
         pairing_sessions.code,
@@ -426,8 +315,8 @@ declare
   removed integer;
 begin
   -- Storage objects must be deleted through the Storage API, not raw SQL.
-  -- Preserve expired session rows which still own files so the scheduled Edge
-  -- Function can identify and remove their objects safely.
+  -- Preserve expired session rows which still own files so the scheduled
+  -- Vercel cleanup can identify and remove their objects safely.
   delete from public.pairing_sessions s
   where s.expires_at < now() - interval '1 hour'
     and not exists (
@@ -451,10 +340,6 @@ $$;
 insert into storage.buckets (id, name, public)
 values ('pairing-files', 'pairing-files', false)
 on conflict (id) do update set public = false;
-
-insert into storage.buckets (id, name, public)
-values ('note-images', 'note-images', true)
-on conflict (id) do update set public = true;
 
 -- pairing-files: uploads must land in a folder named after a LIVE session, so
 -- an open bucket cannot be used as free storage. This is stricter than the old
@@ -488,28 +373,3 @@ create policy "clear files of a live pairing session"
     bucket_id = 'pairing-files'
     and public.is_live_pairing_session((storage.foldername(name))[1])
   );
-
--- note-images: each user may only write inside a folder named after their uid.
-drop policy if exists "note images are written by their owner" on storage.objects;
-create policy "note images are written by their owner"
-  on storage.objects for insert
-  to authenticated
-  with check (
-    bucket_id = 'note-images'
-    and (storage.foldername(name))[1] = (select auth.uid())::text
-  );
-
-drop policy if exists "note images are removed by their owner" on storage.objects;
-create policy "note images are removed by their owner"
-  on storage.objects for delete
-  to authenticated
-  using (
-    bucket_id = 'note-images'
-    and (storage.foldername(name))[1] = (select auth.uid())::text
-  );
-
-drop policy if exists "note images are publicly readable" on storage.objects;
-create policy "note images are publicly readable"
-  on storage.objects for select
-  to anon, authenticated
-  using (bucket_id = 'note-images');

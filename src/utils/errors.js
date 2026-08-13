@@ -2,8 +2,8 @@
  * Turns whatever a library threw into something a person can act on.
  *
  * Supabase, PostgREST and the browser all raise messages written for
- * developers — "new row violates row-level security policy", "Failed to fetch",
- * "JWT expired". Rendering those in the UI tells a user nothing and leaks how
+ * developers — "new row violates row-level security policy" or "Failed to fetch".
+ * Rendering those in the UI tells a user nothing and leaks how
  * the system is built. The real error still goes to the console.
  */
 
@@ -29,26 +29,6 @@ const TRANSLATIONS = [
   {
     test: /row-level security|permission denied|not authorized|insufficient privilege/i,
     message: 'This session is no longer available.',
-  },
-  {
-    test: /jwt|token is expired|invalid claim|refresh_token/i,
-    message: 'Your sign-in has expired. Please sign in again.',
-  },
-  {
-    test: /invalid login credentials/i,
-    message: 'That email or password is not correct.',
-  },
-  {
-    test: /already registered|already exists/i,
-    message: 'An account with that email already exists.',
-  },
-  {
-    test: /password should be at least (\d+)/i,
-    message: 'Please choose a longer password.',
-  },
-  {
-    test: /email not confirmed/i,
-    message: 'Confirm your email address before signing in.',
   },
   {
     test: /rate limit|too many requests/i,

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { FiAlertTriangle } from 'react-icons/fi'
 
 const FOCUSABLE =
@@ -107,7 +108,7 @@ export function ConfirmDialog({
 
   if (!mounted) return null
 
-  return (
+  return createPortal(
     <div
       className={`fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-4 backdrop-blur-[2px] transition-opacity duration-200 ease-out sm:items-center ${
         shown ? 'opacity-100' : 'opacity-0'
@@ -121,7 +122,7 @@ export function ConfirmDialog({
         aria-labelledby="confirm-title"
         aria-describedby="confirm-description"
         onClick={(event) => event.stopPropagation()}
-        className={`w-full max-w-md rounded-2xl border border-line bg-card p-5 shadow-2xl shadow-ink/10 transition-all duration-200 ease-out sm:p-6 ${
+        className={`w-full max-w-md rounded-2xl border border-line bg-surface p-5 shadow-2xl shadow-ink/10 transition-all duration-200 ease-out sm:p-6 ${
           shown
             ? 'translate-y-0 scale-100 opacity-100'
             : 'translate-y-6 scale-[0.97] opacity-0 sm:translate-y-3'
@@ -180,7 +181,8 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

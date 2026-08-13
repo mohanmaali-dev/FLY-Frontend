@@ -3,6 +3,8 @@ import test from 'node:test'
 
 import pairingHandler from '../api/pairing.js'
 import telemetryHandler from '../api/telemetry.js'
+import cleanupHandler from '../api/cleanup.js'
+import healthHandler from '../api/health.js'
 
 const responseMock = () => ({
   statusCode: 200,
@@ -34,4 +36,21 @@ test('telemetry collector rejects unknown event names', () => {
   const response = responseMock()
   telemetryHandler({ method: 'POST', body: { name: 'shared_file_contents' } }, response)
   assert.equal(response.statusCode, 400)
+})
+
+test('cleanup endpoint requires the configured cron authorization', async () => {
+  const previous = process.env.CRON_SECRET
+  delete process.env.CRON_SECRET
+  const response = responseMock()
+
+  await cleanupHandler({ method: 'GET', headers: {} }, response)
+  assert.equal(response.statusCode, 401)
+
+  if (previous) process.env.CRON_SECRET = previous
+})
+
+test('health endpoint rejects unsupported methods without backend access', async () => {
+  const response = responseMock()
+  await healthHandler({ method: 'POST', headers: {} }, response)
+  assert.equal(response.statusCode, 405)
 })

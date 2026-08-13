@@ -50,6 +50,26 @@ body {
   font-optical-sizing: auto;
 }
 
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Keep controls clear of the iPhone home indicator without changing desktop
+   spacing. Browsers without safe-area support simply resolve this to zero. */
+footer {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+@media (pointer: coarse) {
+  button,
+  a,
+  select,
+  summary {
+    touch-action: manipulation;
+  }
+}
+
 h1,
 h2,
 h3 {

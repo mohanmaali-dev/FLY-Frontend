@@ -21,8 +21,8 @@ Reviewed: 2026-08-13
 - Deployment headers include a Content Security Policy, frame denial, MIME
   sniffing protection, a strict referrer policy and a restricted permissions
   policy.
-- Authentication uses the publishable/anon key. A service-role key must never
-  be placed in a `VITE_` environment variable.
+- The browser uses the publishable/anon key. A server secret must never be
+  placed in a `VITE_` environment variable.
 
 ## Production follow-ups
 
@@ -32,12 +32,8 @@ Reviewed: 2026-08-13
 - After verifying the gateway, apply `supabase/production-hardening.sql` to
   revoke the anonymous RPC grants. Without that final deployment step, a custom
   client can still bypass the gateway even though the FLY UI uses it.
-- Deploy and schedule `cleanup-expired-files`; source code alone does not create
-  a Supabase schedule.
+- Set `CRON_SECRET` on Vercel so the configured daily expired-file cleanup can run.
 - Six-character codes are convenient but should be protected by the server-side
   rate limit above. The random UUID in QR links remains substantially stronger.
-- Note images are currently public URLs even though note records are private.
-  Move those images to a private bucket with authenticated signed URLs before
-  using Notes for sensitive material.
 - Recheck the Content Security Policy if a new third-party analytics, media or
   API domain is introduced.

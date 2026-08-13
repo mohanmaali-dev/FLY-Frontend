@@ -1,6 +1,6 @@
 # Supabase setup
 
-FLY uses Supabase for data, Realtime and Storage. Two small Vercel functions add
+FLY uses Supabase for pairing, Realtime and Storage. Vercel functions add
 production rate limiting and privacy-safe telemetry; local development works
 without them.
 
@@ -9,8 +9,6 @@ without them.
 Open `/` and a QR code is already on screen. Scan it from a phone, or open the
 same link on another laptop, and the two devices can send each other text, URLs
 and files. **No account is required for any of that.**
-
-Signing in is optional and only unlocks `/notes`.
 
 Pressing **Disconnect** ends the session, deletes every file shared in it from
 Storage, and issues a fresh QR code.
@@ -38,30 +36,13 @@ is idempotent, so re-running after an edit is safe.
 
 | Object | Replaces |
 | --- | --- |
-| `public.profiles` (+ signup trigger) | the non-credential half of the Mongo `users` collection |
-| `public.notes` | the Mongo `notes` collection |
 | `public.pairing_sessions` | the in-memory `Map` in the old `pairing.service.js` |
 | `create_` / `get_` / `touch_` / `end_pairing_session()` | the `/api/pairing` routes |
 | `is_live_pairing_session()` | upload authorisation the old endpoint never had |
 | `pairing_rate_limits` + `check_pairing_rate_limit()` | atomic server-side gateway limits |
-| buckets `pairing-files`, `note-images` | `multer` + the `uploads/` directory |
+| private `pairing-files` bucket | `multer` + the `uploads/` directory |
 
-## 3. Turn OFF email confirmation
-
-**Authentication → Sign In / Providers → Email → uncheck "Confirm email"**
-
-This is required. Registration is name + email + password and signs the user in
-immediately; with confirmation on, Supabase withholds the session and the app
-will tell you to come back here and switch it off.
-
-**Authentication → URL Configuration**
-
-- *Site URL*: `http://localhost:5173`
-- *Redirect URLs*: add both, so pairing works from a phone on your network:
-  - `http://localhost:5173/**`
-  - `http://<your-lan-ip>:5173/**` (the Network URL `npm run dev` prints)
-
-## 4. Verify
+## 3. Verify
 
 ```bash
 npm run verify:supabase
@@ -70,12 +51,12 @@ npm run verify:supabase
 Exercises the whole backend with only the anon key — the same access the browser
 has. Creates a session, subscribes two devices, checks Presence sees both,
 relays a Broadcast message, uploads a file, deletes it again, ends the session,
-and confirms the policies actually bite (sessions unlistable, notes unreadable
-signed-out, uploads into an unknown session refused).
+and confirms the policies actually bite (sessions unlistable and uploads into
+an unknown session refused).
 
 Exit codes: `0` all passed, `2` schema not applied yet, `1` something failed.
 
-## 5. Run it
+## 4. Run it
 
 ```bash
 cd FLY-Frontend
@@ -86,7 +67,7 @@ npm run dev
 Open the **Network** URL rather than `localhost` — a QR code pointing at
 `localhost` resolves to the phone itself.
 
-## 6. Enable production safeguards
+## 5. Enable production safeguards
 
 On Vercel, configure these server-only environment variables:
 
@@ -94,6 +75,7 @@ On Vercel, configure these server-only environment variables:
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_SECRET_KEY=sb_secret_your-server-only-key
 RATE_LIMIT_SALT=a-long-random-secret
+CRON_SECRET=another-long-random-secret
 ```
 
 Set these browser build variables:
@@ -114,19 +96,13 @@ revokes direct browser access to the two protected RPCs, preventing someone from
 bypassing the gateway. Run `npm run verify:supabase` before this final revoke;
 the verification script intentionally exercises the anonymous development path.
 
-## 7. Deploy expired-file cleanup
+## 6. Automatic expired-file cleanup
 
-Deploy the included Edge Function:
+Add `CRON_SECRET` to the Vercel server environment and redeploy. The cron entry
+in `vercel.json` runs `/api/cleanup` daily. It removes files belonging to
+expired sessions before deleting their session rows.
 
-```bash
-supabase functions deploy cleanup-expired-files
-```
-
-Schedule a POST invocation every 15 minutes and send
-`Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>`. The function lists expired
-sessions, removes their files through the Storage API, and then removes their
-session rows. The SQL cleanup function intentionally preserves expired rows
-which still own files so Storage objects never become untraceable.
+`/api/health` is also available for production uptime monitoring.
 
 ---
 
@@ -162,9 +138,8 @@ relay used.
   through your laptop with no outside connection; every message now round-trips
   through Supabase.
 - **Free tier caps files at 50 MB**, exactly the app's own limit.
-- **Empty expired sessions and rate-limit rows** are cleaned by
-  `cleanup_expired_pairing_sessions()`. It can be scheduled alongside the Edge
-  Function:
+- **Empty expired sessions and rate-limit rows** can also be cleaned directly in
+  Supabase with:
 
   ```sql
   select cron.schedule('fly-cleanup', '*/15 * * * *',

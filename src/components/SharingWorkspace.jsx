@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   FiArrowRight,
+  FiCheckCircle,
   FiMonitor,
   FiEdit2,
   FiPower,
@@ -62,7 +63,6 @@ export function SharingWorkspace({
   summary,
   items = [],
   sessionId,
-  expiresAt,
   error = '',
   connectionStatus = 'connected',
   disabled = false,
@@ -84,7 +84,7 @@ export function SharingWorkspace({
   const [editingName, setEditingName] = useState(false)
   const [deviceName, setDeviceName] = useState(localDevice?.name || '')
   const [savingName, setSavingName] = useState(false)
-  const [minutesLeft, setMinutesLeft] = useState(null)
+  const [showConnectedWelcome, setShowConnectedWelcome] = useState(false)
   const { toast } = useToast()
   const connectionInterrupted = ['offline', 'reconnecting', 'disconnected'].includes(
     connectionStatus,
@@ -101,12 +101,15 @@ export function SharingWorkspace({
   useEffect(() => setDeviceName(localDevice?.name || ''), [localDevice?.name])
 
   useEffect(() => {
-    if (!expiresAt) return
-    const update = () => setMinutesLeft(Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 60_000)))
-    update()
-    const timer = setInterval(update, 30_000)
-    return () => clearInterval(timer)
-  }, [expiresAt])
+    if (!paired) {
+      setShowConnectedWelcome(false)
+      return
+    }
+
+    setShowConnectedWelcome(true)
+    const timer = setTimeout(() => setShowConnectedWelcome(false), 6000)
+    return () => clearTimeout(timer)
+  }, [paired])
 
   const saveDeviceName = async (event) => {
     event.preventDefault()
@@ -175,9 +178,9 @@ export function SharingWorkspace({
         <div className="flex flex-wrap items-center gap-2">
           {paired ? (
             <span className="w-fit rounded-full border border-ok-line bg-ok-soft px-3 py-1.5 text-xs text-ok" title="Active sessions renew automatically">Session active</span>
-          ) : minutesLeft !== null && (
-            <span className="w-fit rounded-full border border-line bg-raised px-3 py-1.5 text-xs tabular-nums text-ink-soft" title="Active sessions renew automatically">
-              {minutesLeft > 0 ? `Expires in ${minutesLeft} min` : 'Renewing session'}
+          ) : (
+            <span className="w-fit rounded-full border border-accent-line bg-accent-soft px-3 py-1.5 text-xs text-accent-hover">
+              Ready to connect
             </span>
           )}
           {items.length > 0 && (
@@ -209,6 +212,16 @@ export function SharingWorkspace({
               Try again
             </button>
           )}
+        </div>
+      )}
+
+      {showConnectedWelcome && !connectionInterrupted && (
+        <div role="status" className="mt-5 flex items-start gap-3 rounded-xl border border-ok-line bg-ok-soft px-4 py-3 text-ok">
+          <FiCheckCircle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold text-ink">You&apos;re connected</p>
+            <p className="mt-0.5 text-sm text-ok">Share from either device whenever you&apos;re ready.</p>
+          </div>
         </div>
       )}
 

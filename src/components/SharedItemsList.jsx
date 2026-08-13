@@ -14,6 +14,7 @@ import {
   FiMusic,
   FiRefreshCw,
   FiSearch,
+  FiShare2,
   FiTrash2,
   FiVideo,
 } from 'react-icons/fi'
@@ -184,6 +185,25 @@ export function SharedItemsList({ items = [], onRetryItem, onRemoveItem }) {
     setDownloadingAll(false)
   }
 
+  const shareItem = async (item) => {
+    if (typeof navigator.share !== 'function' || busyId) return
+    const isLink = getItemType(item) === 'link'
+    const data = isLink
+      ? { title: item.text || 'Shared link', url: item.url }
+      : { title: 'Shared with FLY', text: item.text }
+
+    setBusyId(item.id)
+    try {
+      await navigator.share(data)
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        toast({ tone: 'warning', title: 'Could not open sharing', description: 'Copy the item and try again.' })
+      }
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   if (!items || items.length === 0) {
     return (
       <div className="flex min-h-[300px] flex-col items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface/70 px-6 py-12 text-center">
@@ -286,7 +306,18 @@ export function SharedItemsList({ items = [], onRetryItem, onRemoveItem }) {
                       {item.text}
                     </p>
 
-                    <div className="mt-3 flex justify-end">
+                    <div className="mt-3 flex justify-end gap-2">
+                      {typeof navigator.share === 'function' && (
+                        <button
+                          type="button"
+                          onClick={() => shareItem(item)}
+                          aria-label="Share text with another app"
+                          className="flex min-h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-soft shadow-[var(--shadow-card)] transition hover:text-ink"
+                        >
+                          <FiShare2 size={13} />
+                          <span>Share</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => copyToClipboard(item.text, itemId)}
@@ -327,11 +358,22 @@ export function SharedItemsList({ items = [], onRetryItem, onRemoveItem }) {
                       </div>
 
                       <div className="flex shrink-0 items-center gap-1.5">
+                        {typeof navigator.share === 'function' && (
+                          <button
+                            type="button"
+                            onClick={() => shareItem(item)}
+                            aria-label="Share link with another app"
+                            className="rounded-md border border-line bg-surface p-1.5 text-ink-soft transition hover:text-ink"
+                            title="Share link"
+                          >
+                            <FiShare2 size={13} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => copyToClipboard(item.url, itemId)}
                           aria-label="Copy shared link"
-                          className="rounded-md border border-line bg-card p-1.5 text-ink-soft transition hover:text-ink"
+                          className="rounded-md border border-line bg-surface p-1.5 text-ink-soft transition hover:text-ink"
                           title="Copy link"
                         >
                           {copiedId === itemId ? (
